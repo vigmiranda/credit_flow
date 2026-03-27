@@ -126,6 +126,10 @@ services:
     container_name: credit-flow-workflow
     environment:
       WORKFLOW_SERVICE_PORT: "8084"
+      WORKFLOW_REDIS_URL: redis://redis:6379/0
+      WORKFLOW_QUEUE_NAME: workflow:proposal-analysis
+      WORKFLOW_WORKER_COUNT: "1"
+      WORKFLOW_MAX_RETRIES: "2"
       WORKFLOW_ANALYSIS_DELAY_MS: "250"
       WORKFLOW_SERVICE_PROPOSAL_URL: http://proposal:8081
       WORKFLOW_SERVICE_CUSTOMER_URL: http://customer:8082
@@ -146,6 +150,8 @@ services:
         condition: service_started
       notification:
         condition: service_started
+      redis:
+        condition: service_healthy
 
   bff:
     build:
@@ -182,6 +188,9 @@ services:
       NODE_ENV: production
       NEXT_PUBLIC_BFF_URL: http://localhost:18080
       AUTH_MODE: mock
+      OIDC_AUTHORIZE_PATH: /authorize
+      OIDC_TOKEN_PATH: /token
+      OIDC_USERINFO_PATH: /userinfo
       OIDC_REDIRECT_URI: http://localhost:3000/api/auth/callback
     depends_on:
       bff:

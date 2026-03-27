@@ -14,7 +14,8 @@ export default async function LoginPage() {
     authConfig.issuerUrl &&
       authConfig.clientId &&
       authConfig.redirectUri &&
-      authConfig.authorizeUrl,
+      authConfig.authorizeUrl &&
+      authConfig.tokenUrl,
   );
 
   return (
@@ -42,6 +43,10 @@ export default async function LoginPage() {
           <div>
             <span>Authorize URL</span>
             <strong>{authConfig.authorizeUrl || "nao definido"}</strong>
+          </div>
+          <div>
+            <span>Token URL</span>
+            <strong>{authConfig.tokenUrl || "nao definido"}</strong>
           </div>
         </div>
       </section>
@@ -92,7 +97,7 @@ export default async function LoginPage() {
           <div className="form-grid">
             <div className="full-width">
               <p className="lead">
-                O front ja valida `state`, recebe `code` no callback e cria a sessao local.
+                O front valida `state`, troca `code` por token e monta a sessao local a partir de `userinfo` ou `id_token`.
               </p>
             </div>
             <div className="auth-actions">
@@ -106,7 +111,7 @@ export default async function LoginPage() {
             </div>
             {!oidcReady ? (
               <p className="empty-state">
-                Configure `OIDC_ISSUER_URL`, `OIDC_CLIENT_ID` e `OIDC_REDIRECT_URI` para habilitar o redirecionamento.
+                Configure `OIDC_ISSUER_URL`, `OIDC_CLIENT_ID`, `OIDC_REDIRECT_URI` e o endpoint de token para habilitar o fluxo.
               </p>
             ) : null}
           </div>

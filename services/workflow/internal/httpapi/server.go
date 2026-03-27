@@ -3,11 +3,13 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
 
 	"creditflow/services/workflow/internal/backend"
+	"creditflow/services/workflow/internal/queue"
 )
 
 const headerCorrelationID = "X-Correlation-Id"
@@ -25,12 +27,16 @@ type server struct {
 	credit        gateway
 	fraud         gateway
 	notifications gateway
+	queue         queue.Queue
 	delay         time.Duration
+	maxRetries    int
 }
 
 type workflowResponse struct {
 	ProposalID  string                   `json:"proposal_id"`
 	FinalStatus string                   `json:"final_status"`
+	QueueStatus string                   `json:"queue_status,omitempty"`
+	Attempt     int                      `json:"attempt,omitempty"`
 	Results     []backend.AnalysisResult `json:"results"`
 }
 
@@ -41,7 +47,11 @@ type errorResponse struct {
 	Details       map[string]any `json:"details,omitempty"`
 }
 
-func NewServer(proposals gateway, customers gateway, documents gateway, credit gateway, fraud gateway, notifications gateway, delay time.Duration) http.Handler {
+func NewServer(proposals gateway, customers gateway, documents gateway, credit gateway, fraud gateway, notifications gateway, workflowQueue queue.Queue, delay time.Duration, maxRetries int) *server {
+	if maxRetries < 0 {
+		maxRetries = 0
+	}
+
 	return &server{
 		proposals:     proposals,
 		customers:     customers,
@@ -49,7 +59,19 @@ func NewServer(proposals gateway, customers gateway, documents gateway, credit g
 		credit:        credit,
 		fraud:         fraud,
 		notifications: notifications,
+		queue:         workflowQueue,
 		delay:         delay,
+		maxRetries:    maxRetries,
+	}
+}
+
+func (s *server) StartWorkers(ctx context.Context, workerCount int) {
+	if workerCount < 1 {
+		workerCount = 1
+	}
+
+	for index := 0; index < workerCount; index++ {
+		go s.workerLoop(ctx)
 	}
 }
 
@@ -77,13 +99,59 @@ func (s *server) handleProposalRoutes(w http.ResponseWriter, r *http.Request, co
 		return
 	}
 
-	result, err := s.runWorkflow(r.Context(), segments[0], correlationID)
-	if err != nil {
-		writeError(w, http.StatusBadGateway, correlationID, "upstream_error", err.Error(), nil)
+	job := queue.Job{
+		ProposalID:    segments[0],
+		CorrelationID: correlationID,
+		Attempt:       0,
+		EnqueuedAt:    time.Now().UTC().Format(time.RFC3339),
+	}
+	if err := s.queue.Enqueue(r.Context(), job); err != nil {
+		writeError(w, http.StatusBadGateway, correlationID, "queue_error", "falha ao enfileirar workflow", nil)
 		return
 	}
 
-	writeJSON(w, http.StatusAccepted, result)
+	writeJSON(w, http.StatusAccepted, workflowResponse{
+		ProposalID:  segments[0],
+		FinalStatus: "queued",
+		QueueStatus: "queued",
+		Attempt:     0,
+		Results:     []backend.AnalysisResult{},
+	})
+}
+
+func (s *server) workerLoop(ctx context.Context) {
+	for {
+		job, err := s.queue.Dequeue(ctx)
+		if err != nil {
+			if errors.Is(err, context.Canceled) {
+				return
+			}
+
+			time.Sleep(500 * time.Millisecond)
+			continue
+		}
+
+		runCtx, cancel := context.WithTimeout(ctx, 45*time.Second)
+		err = s.processJob(runCtx, job)
+		cancel()
+		if err == nil {
+			continue
+		}
+
+		if job.Attempt >= s.maxRetries {
+			s.handleWorkflowFailure(ctx, job, err)
+			continue
+		}
+
+		job.Attempt++
+		job.EnqueuedAt = time.Now().UTC().Format(time.RFC3339)
+		_ = s.queue.Enqueue(ctx, job)
+	}
+}
+
+func (s *server) processJob(ctx context.Context, job queue.Job) error {
+	_, err := s.runWorkflow(ctx, job.ProposalID, nonEmptyCorrelationID(job.CorrelationID))
+	return err
 }
 
 func (s *server) runWorkflow(ctx context.Context, proposalID, correlationID string) (workflowResponse, error) {
@@ -173,6 +241,23 @@ func (s *server) runWorkflow(ctx context.Context, proposalID, correlationID stri
 	return response, nil
 }
 
+func (s *server) handleWorkflowFailure(ctx context.Context, job queue.Job, workflowErr error) {
+	correlationID := nonEmptyCorrelationID(job.CorrelationID)
+	_ = s.updateProposalStatus(ctx, job.ProposalID, "manual_review", correlationID)
+	if email, ok := s.fetchCustomerEmail(ctx, job.ProposalID, correlationID); ok {
+		s.sendNotification(
+			ctx,
+			job.ProposalID,
+			email,
+			"manual_review",
+			"Sua proposta foi encaminhada para revisao manual apos uma falha tecnica no processamento.",
+			correlationID,
+		)
+	}
+
+	_ = workflowErr
+}
+
 func (s *server) updateProposalStatus(ctx context.Context, proposalID, status, correlationID string) error {
 	return s.proposals.Patch(ctx, "/internal/proposals/"+proposalID+"/status", correlationID, map[string]string{
 		"status": status,
@@ -202,6 +287,19 @@ func finalizeFromResult(result backend.AnalysisResult) (string, bool) {
 	}
 }
 
+func (s *server) fetchCustomerEmail(ctx context.Context, proposalID, correlationID string) (string, bool) {
+	var customer backend.Customer
+	if err := s.customers.Get(ctx, "/internal/proposals/"+proposalID+"/customer", correlationID, &customer); err != nil {
+		return "", false
+	}
+
+	if strings.TrimSpace(customer.Email) == "" {
+		return "", false
+	}
+
+	return customer.Email, true
+}
+
 func (s *server) sendNotification(ctx context.Context, proposalID, recipient, status, message, correlationID string) {
 	if strings.TrimSpace(recipient) == "" {
 		return
@@ -229,6 +327,14 @@ func statusMessage(status string) string {
 	default:
 		return "Sua proposta mudou de status."
 	}
+}
+
+func nonEmptyCorrelationID(value string) string {
+	if strings.TrimSpace(value) != "" {
+		return value
+	}
+
+	return "corr_" + time.Now().UTC().Format("20060102150405")
 }
 
 func getOrCreateCorrelationID(r *http.Request) string {

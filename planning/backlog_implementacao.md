@@ -333,16 +333,16 @@ Objetivo: garantir repetibilidade, confianca e evolucao continua.
 
 ### Ciclo atual
 
-- Identificador: ciclo-11
+- Identificador: ciclo-12
 - Status: aberto
-- Objetivo: reduzir acoplamento do workflow e preparar integracoes externas reais
+- Objetivo: aproximar o MVP de integracoes externas reais e operacao assistida
 - Itens priorizados:
-  - evoluir o workflow para coordenacao por fila e retries
-  - adicionar callback OIDC com troca real de token
   - preparar callbacks ou webhooks para storage e parceiros externos
-  - expandir smoke test para validar a stack docker ponta a ponta
+  - adicionar troca real de token com validacao criptografica do `id_token`
+  - ampliar observabilidade da fila com DLQ e metricas dedicadas
+  - testar integracao local com issuer OIDC real ou mock dedicado
 - Observacao:
-  - ciclo-10 fechou upload real em storage local, notificacao SMTP local e callback OIDC inicial
+  - ciclo-11 fechou fila com retry no workflow, callback OIDC com token exchange e smoke da stack Docker
 
 ## Entregas materializadas no ciclo-3
 
@@ -425,6 +425,16 @@ Objetivo: garantir repetibilidade, confianca e evolucao continua.
 - contrato do BFF e documentacao do workflow e ambiente local atualizados;
 - validacao com `go test ./...`, `npm run typecheck`, `npm run build` e `scripts/verify.ps1`.
 
+## Entregas materializadas no ciclo-11
+
+- `workflow service` com enfileiramento assincrono, worker dedicado e retry configuravel;
+- suporte a Redis no workflow por `WORKFLOW_REDIS_URL`, com fallback para fila em memoria;
+- callback OIDC no front com troca real de token e leitura de perfil via `userinfo` ou `id_token`;
+- novas variaveis de ambiente para token endpoint, userinfo e segredo do cliente OIDC;
+- `docker-compose` ligado ao Redis para o workflow e smoke dedicado da stack em `scripts/smoke_docker_stack.ps1`;
+- documentacao atualizada para fluxo enfileirado, ambiente local e validacao ponta a ponta;
+- validacao com `go test ./...` no workflow, `npm run typecheck`, `npm run build` e smoke da stack Docker.
+
 ### Historico
 
 | Ciclo | Status | Resumo |
@@ -440,3 +450,4 @@ Objetivo: garantir repetibilidade, confianca e evolucao continua.
 | ciclo-8 | concluido | Mascaramento de PII no BFF, secrets por arquivo, criptografia de destinatario em notificacoes e documentacao operacional entregues |
 | ciclo-9 | concluido | Autenticacao inicial mock OIDC-ready no front e ambiente local ampliado com Redis, Mailpit e MinIO |
 | ciclo-10 | concluido | Upload real via MinIO, notificacoes SMTP locais via Mailpit e callback OIDC inicial no front |
+| ciclo-11 | concluido | Workflow com fila e retry, callback OIDC com token exchange e smoke da stack Docker |

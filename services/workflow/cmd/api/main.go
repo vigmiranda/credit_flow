@@ -13,20 +13,36 @@ import (
 	"creditflow/services/workflow/internal/config"
 	"creditflow/services/workflow/internal/httpapi"
 	"creditflow/services/workflow/internal/observability"
+	"creditflow/services/workflow/internal/queue"
 )
 
 func main() {
 	cfg := config.Load()
 	metrics := observability.NewMetrics("workflow")
-	apiHandler := metrics.Wrap(httpapi.NewServer(
+
+	var workflowQueue queue.Queue
+	if cfg.RedisURL != "" {
+		redisQueue, err := queue.NewRedisQueue(cfg.RedisURL, cfg.QueueName, cfg.QueuePollTimeout)
+		if err != nil {
+			log.Fatalf("new redis queue: %v", err)
+		}
+		workflowQueue = redisQueue
+	} else {
+		workflowQueue = queue.NewMemoryQueue(cfg.WorkerCount * 8)
+	}
+
+	serverHandler := httpapi.NewServer(
 		backend.NewClient(cfg.ProposalServiceURL),
 		backend.NewClient(cfg.CustomerServiceURL),
 		backend.NewClient(cfg.DocumentServiceURL),
 		backend.NewClient(cfg.CreditAnalysisServiceURL),
 		backend.NewClient(cfg.FraudAnalysisServiceURL),
 		backend.NewClient(cfg.NotificationServiceURL),
+		workflowQueue,
 		cfg.AnalysisDelay,
-	))
+		cfg.MaxRetries,
+	)
+	apiHandler := metrics.Wrap(serverHandler)
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", metrics.Handler())
 	mux.Handle("/", apiHandler)
@@ -46,6 +62,7 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	serverHandler.StartWorkers(ctx, cfg.WorkerCount)
 
 	<-ctx.Done()
 

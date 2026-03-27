@@ -51,7 +51,7 @@ Entregar um slice vertical demonstravel do fluxo de proposta:
 - `services/proposal`: cria, consulta e atualiza status da proposta
 - `services/customer`: cadastra e consulta cliente por proposta
 - `services/document`: registra documentos, grava arquivos no MinIO e lista documentos
-- `services/workflow`: orquestra as analises simuladas do MVP
+- `services/workflow`: enfileira e processa as analises simuladas do MVP com worker e retry
 - `services/credit-analysis`: simulador de analise de credito
 - `services/fraud-analysis`: simulador de analise de fraude
 - `services/notification`: registra o historico de notificacoes e envia e-mail por SMTP local
@@ -88,12 +88,13 @@ Pre-requisito:
 
 - `apps/web` agora protege `/` por cookie de sessao e redireciona para `/login`
 - `AUTH_MODE=mock` habilita login operacional local
-- `AUTH_MODE=oidc` habilita inicio de login via issuer configurado e callback local com validacao de `state`
+- `AUTH_MODE=oidc` habilita inicio de login via issuer configurado e callback local com validacao de `state` e troca de token
 
 ## Validacao rapida
 
 - local: `powershell -ExecutionPolicy Bypass -File .\scripts\verify.ps1`
 - smoke do MVP: `powershell -ExecutionPolicy Bypass -File .\scripts\smoke_mvp.ps1`
+- smoke da stack Docker: `powershell -ExecutionPolicy Bypass -File .\scripts\smoke_docker_stack.ps1`
 - CI: `.github/workflows/validate.yml`
 - build de imagens: `.github/workflows/build-images.yml`
 
@@ -101,6 +102,7 @@ Pre-requisito:
 
 - `GET /metrics` disponivel em `bff`, `proposal`, `workflow` e `notification`
 - logs estruturados em JSON com `correlation_id`, `path`, `status_code` e `duration_ms`
+- `workflow` usa Redis como fila quando `WORKFLOW_REDIS_URL` estiver configurado e cai para fila em memoria no fallback local
 
 ## Seguranca minima atual
 

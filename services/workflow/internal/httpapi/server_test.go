@@ -2,12 +2,14 @@ package httpapi
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
 	"creditflow/services/workflow/internal/backend"
+	"creditflow/services/workflow/internal/queue"
 )
 
 type stubGateway struct {
@@ -28,8 +30,51 @@ func (s stubGateway) Patch(ctx context.Context, path, correlationID string, payl
 	return s.patchFunc(ctx, path, correlationID, payload, out)
 }
 
-func TestWorkflowApprovesProposal(t *testing.T) {
+func TestRunAnalysesEnqueuesWorkflow(t *testing.T) {
+	workflowQueue := queue.NewMemoryQueue(1)
+	srv := NewServer(
+		stubGateway{},
+		stubGateway{},
+		stubGateway{},
+		stubGateway{},
+		stubGateway{},
+		stubGateway{},
+		workflowQueue,
+		0,
+		2,
+	)
+
+	req := httptest.NewRequest(http.MethodPost, "/internal/proposals/prop_123/run-analyses", nil)
+	resp := httptest.NewRecorder()
+	srv.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusAccepted {
+		t.Fatalf("expected status %d, got %d", http.StatusAccepted, resp.Code)
+	}
+
+	var response workflowResponse
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if response.FinalStatus != "queued" {
+		t.Fatalf("expected queued response, got %s", response.FinalStatus)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	job, err := workflowQueue.Dequeue(ctx)
+	if err != nil {
+		t.Fatalf("dequeue workflow job: %v", err)
+	}
+	if job.ProposalID != "prop_123" {
+		t.Fatalf("expected proposal id prop_123, got %s", job.ProposalID)
+	}
+}
+
+func TestProcessJobApprovesProposal(t *testing.T) {
 	proposalPostCount := 0
+	proposalPatchCount := 0
 	proposalGateway := stubGateway{
 		getFunc: func(context.Context, string, string, any) error { return nil },
 		postFunc: func(_ context.Context, path, _ string, _ any, _ any) error {
@@ -39,7 +84,13 @@ func TestWorkflowApprovesProposal(t *testing.T) {
 			proposalPostCount++
 			return nil
 		},
-		patchFunc: func(context.Context, string, string, any, any) error { return nil },
+		patchFunc: func(_ context.Context, path, _ string, _ any, _ any) error {
+			if path != "/internal/proposals/prop_123/status" {
+				t.Fatalf("unexpected proposal patch path %s", path)
+			}
+			proposalPatchCount++
+			return nil
+		},
 	}
 
 	customerGateway := stubGateway{
@@ -98,22 +149,45 @@ func TestWorkflowApprovesProposal(t *testing.T) {
 		patchFunc: func(context.Context, string, string, any, any) error { return nil },
 	}
 
+	notificationPostCount := 0
 	notificationGateway := stubGateway{
-		getFunc:   func(context.Context, string, string, any) error { return nil },
-		postFunc:  func(context.Context, string, string, any, any) error { return nil },
+		getFunc: func(context.Context, string, string, any) error { return nil },
+		postFunc: func(_ context.Context, path, _ string, _ any, _ any) error {
+			if path != "/internal/proposals/prop_123/notifications" {
+				t.Fatalf("unexpected notification path %s", path)
+			}
+			notificationPostCount++
+			return nil
+		},
 		patchFunc: func(context.Context, string, string, any, any) error { return nil },
 	}
 
-	srv := NewServer(proposalGateway, customerGateway, documentGateway, creditGateway, fraudGateway, notificationGateway, 0*time.Millisecond)
-	req := httptest.NewRequest(http.MethodPost, "/internal/proposals/prop_123/run-analyses", nil)
-	resp := httptest.NewRecorder()
+	srv := NewServer(
+		proposalGateway,
+		customerGateway,
+		documentGateway,
+		creditGateway,
+		fraudGateway,
+		notificationGateway,
+		queue.NewMemoryQueue(1),
+		0,
+		2,
+	)
 
-	srv.ServeHTTP(resp, req)
-
-	if resp.Code != http.StatusAccepted {
-		t.Fatalf("expected status %d, got %d", http.StatusAccepted, resp.Code)
+	err := srv.processJob(context.Background(), queue.Job{
+		ProposalID:    "prop_123",
+		CorrelationID: "corr_test",
+	})
+	if err != nil {
+		t.Fatalf("process job: %v", err)
 	}
 	if proposalPostCount != 3 {
 		t.Fatalf("expected 3 analysis result writes, got %d", proposalPostCount)
+	}
+	if proposalPatchCount != 4 {
+		t.Fatalf("expected 4 status transitions, got %d", proposalPatchCount)
+	}
+	if notificationPostCount != 4 {
+		t.Fatalf("expected 4 notifications, got %d", notificationPostCount)
 	}
 }

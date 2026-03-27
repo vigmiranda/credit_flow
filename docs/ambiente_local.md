@@ -37,5 +37,7 @@ docker compose -f infra/docker/docker-compose.yml up -d --build
 - o `docker-compose` sobe toda a stack local do MVP, incluindo front e servicos Go;
 - os servicos internos Go ficam acessiveis pela rede Docker e expostos ao host apenas via `web` e `bff`;
 - o upload documental usa o bucket `proposal-documents` no MinIO;
+- o `workflow service` usa Redis como fila de processamento e reaplica retries configuraveis;
 - as notificacoes do `notification service` sao entregues por SMTP local no Mailpit;
-- o smoke test segue isolado do stack principal para evitar conflito de portas e dados.
+- `scripts/smoke_docker_stack.ps1` valida a stack Docker ponta a ponta sem precisar subir processos Go manuais;
+- o smoke test isolado segue disponivel em `scripts/smoke_mvp.ps1` para diagnostico fora do compose.
