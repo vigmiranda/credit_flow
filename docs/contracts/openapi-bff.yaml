@@ -113,6 +113,39 @@ paths:
                 $ref: "#/components/schemas/DocumentUploadResponse"
         "400":
           $ref: "#/components/responses/BadRequest"
+  /api/v1/proposals/{proposalId}/documents:
+    get:
+      summary: Listar documentos da proposta
+      operationId: listProposalDocuments
+      parameters:
+        - $ref: "#/components/parameters/ProposalId"
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "200":
+          description: Documentos encontrados
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocumentListResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/proposals/{proposalId}/documents/{documentId}/received:
+    post:
+      summary: Confirmar recebimento do documento
+      operationId: markDocumentReceived
+      parameters:
+        - $ref: "#/components/parameters/ProposalId"
+        - $ref: "#/components/parameters/DocumentId"
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "202":
+          description: Documento confirmado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocumentDetails"
+        "404":
+          $ref: "#/components/responses/NotFound"
 components:
   parameters:
     ProposalId:
@@ -125,6 +158,12 @@ components:
       name: X-Correlation-Id
       in: header
       required: false
+      schema:
+        type: string
+    DocumentId:
+      name: documentId
+      in: path
+      required: true
       schema:
         type: string
     IdempotencyKey:
@@ -175,8 +214,12 @@ components:
           type: string
         status:
           type: string
-        customer_id:
-          type: string
+        customer:
+          $ref: "#/components/schemas/CustomerDetails"
+        documents:
+          type: array
+          items:
+            $ref: "#/components/schemas/DocumentDetails"
         created_at:
           type: string
           format: date-time
@@ -235,6 +278,73 @@ components:
           type: string
         file_key:
           type: string
+        status:
+          type: string
+    CustomerDetails:
+      type: object
+      properties:
+        customer_id:
+          type: string
+        proposal_id:
+          type: string
+        full_name:
+          type: string
+        cpf:
+          type: string
+        birth_date:
+          type: string
+        email:
+          type: string
+        phone:
+          type: string
+        monthly_income:
+          type: number
+          format: double
+        address:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    DocumentDetails:
+      type: object
+      properties:
+        document_id:
+          type: string
+        proposal_id:
+          type: string
+        document_type:
+          type: string
+        file_name:
+          type: string
+        content_type:
+          type: string
+        file_key:
+          type: string
+        status:
+          type: string
+        upload_url:
+          type: string
+        uploaded_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    DocumentListResponse:
+      type: object
+      properties:
+        proposal_id:
+          type: string
+        documents:
+          type: array
+          items:
+            $ref: "#/components/schemas/DocumentDetails"
     AcceptedResponse:
       type: object
       required: [status, message]
@@ -257,4 +367,3 @@ components:
         details:
           type: object
           additionalProperties: true
-

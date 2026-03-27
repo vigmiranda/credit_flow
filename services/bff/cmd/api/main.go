@@ -9,13 +9,21 @@ import (
 	"syscall"
 	"time"
 
+	"creditflow/services/bff/internal/backend"
+	"creditflow/services/bff/internal/config"
 	"creditflow/services/bff/internal/httpapi"
 )
 
 func main() {
+	cfg := config.Load()
+
 	server := &http.Server{
-		Addr:              ":8080",
-		Handler:           httpapi.NewServer(),
+		Addr: ":" + cfg.Port,
+		Handler: httpapi.NewServer(
+			backend.NewClient(cfg.ProposalServiceURL),
+			backend.NewClient(cfg.CustomerServiceURL),
+			backend.NewClient(cfg.DocumentServiceURL),
+		),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 

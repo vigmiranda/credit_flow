@@ -1,20 +1,40 @@
 package httpapi
 
 import (
-	"crypto/rand"
-	"encoding/hex"
+	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"strings"
 	"time"
+
+	"creditflow/services/bff/internal/backend"
 )
 
 const (
 	headerCorrelationID = "X-Correlation-Id"
 )
 
-type server struct{}
+type proposalGateway interface {
+	Post(ctx context.Context, path, correlationID string, payload any, out any) (int, error)
+	Get(ctx context.Context, path, correlationID string, out any) (int, error)
+	Patch(ctx context.Context, path, correlationID string, payload any, out any) (int, error)
+}
+
+type customerGateway interface {
+	Post(ctx context.Context, path, correlationID string, payload any, out any) (int, error)
+	Get(ctx context.Context, path, correlationID string, out any) (int, error)
+}
+
+type documentGateway interface {
+	Post(ctx context.Context, path, correlationID string, payload any, out any) (int, error)
+	Get(ctx context.Context, path, correlationID string, out any) (int, error)
+}
+
+type server struct {
+	proposals proposalGateway
+	customers customerGateway
+	documents documentGateway
+}
 
 type healthResponse struct {
 	Status string `json:"status"`
@@ -34,12 +54,13 @@ type createProposalResponse struct {
 }
 
 type proposalResponse struct {
-	ProposalID string `json:"proposal_id"`
-	Protocol   string `json:"protocol"`
-	Status     string `json:"status"`
-	CustomerID string `json:"customer_id,omitempty"`
-	CreatedAt  string `json:"created_at"`
-	UpdatedAt  string `json:"updated_at"`
+	ProposalID string             `json:"proposal_id"`
+	Protocol   string             `json:"protocol"`
+	Status     string             `json:"status"`
+	Customer   *backend.Customer  `json:"customer,omitempty"`
+	Documents  []backend.Document `json:"documents,omitempty"`
+	CreatedAt  string             `json:"created_at"`
+	UpdatedAt  string             `json:"updated_at"`
 }
 
 type proposalStatusResponse struct {
@@ -72,22 +93,33 @@ type documentUploadResponse struct {
 	DocumentID string `json:"document_id"`
 	UploadURL  string `json:"upload_url"`
 	FileKey    string `json:"file_key"`
+	Status     string `json:"status,omitempty"`
 }
 
-func NewServer() http.Handler {
-	return &server{}
+func NewServer(proposals proposalGateway, customers customerGateway, documents documentGateway) http.Handler {
+	return &server{
+		proposals: proposals,
+		customers: customers,
+		documents: documents,
+	}
 }
 
 func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	correlationID := getOrCreateCorrelationID(r)
 	w.Header().Set(headerCorrelationID, correlationID)
+	applyCORS(w)
+
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
 
 	switch {
 	case r.Method == http.MethodGet && r.URL.Path == "/healthz":
 		writeJSON(w, http.StatusOK, healthResponse{Status: "ok"})
 		return
 	case r.Method == http.MethodPost && r.URL.Path == "/api/v1/proposals":
-		s.createProposal(w, r)
+		s.createProposal(w, r, correlationID)
 		return
 	case strings.HasPrefix(r.URL.Path, "/api/v1/proposals/"):
 		s.handleProposalRoutes(w, r, correlationID)
@@ -97,14 +129,24 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *server) createProposal(w http.ResponseWriter, _ *http.Request) {
-	proposalID := "prop_" + randomToken(8)
-	protocol := "P-" + time.Now().UTC().Format("20060102150405")
+func (s *server) createProposal(w http.ResponseWriter, r *http.Request, correlationID string) {
+	var proposal backend.Proposal
+	if _, err := s.proposals.Post(r.Context(), "/internal/proposals", correlationID, nil, &proposal); err != nil {
+		writeError(w, http.StatusBadGateway, correlationID, "upstream_error", "falha ao criar proposta", nil)
+		return
+	}
+
+	var updated backend.Proposal
+	if _, err := s.proposals.Patch(r.Context(), "/internal/proposals/"+proposal.ProposalID+"/status", correlationID, map[string]string{
+		"status": "customer_data_pending",
+	}, &updated); err == nil {
+		proposal = updated
+	}
 
 	writeJSON(w, http.StatusCreated, createProposalResponse{
-		ProposalID: proposalID,
-		Protocol:   protocol,
-		Status:     "created",
+		ProposalID: proposal.ProposalID,
+		Protocol:   proposal.Protocol,
+		Status:     proposal.Status,
 	})
 }
 
@@ -119,28 +161,17 @@ func (s *server) handleProposalRoutes(w http.ResponseWriter, r *http.Request, co
 	proposalID := segments[0]
 
 	if len(segments) == 1 && r.Method == http.MethodGet {
-		now := time.Now().UTC().Format(time.RFC3339)
-		writeJSON(w, http.StatusOK, proposalResponse{
-			ProposalID: proposalID,
-			Protocol:   "P-DEMO-0001",
-			Status:     "documents_pending",
-			CreatedAt:  now,
-			UpdatedAt:  now,
-		})
+		s.getProposal(w, r, correlationID, proposalID)
 		return
 	}
 
 	if len(segments) == 2 && segments[1] == "status" && r.Method == http.MethodGet {
-		writeJSON(w, http.StatusOK, proposalStatusResponse{
-			ProposalID:    proposalID,
-			Status:        "documents_pending",
-			LastUpdatedAt: time.Now().UTC().Format(time.RFC3339),
-		})
+		s.getProposalStatus(w, r, correlationID, proposalID)
 		return
 	}
 
 	if len(segments) == 2 && segments[1] == "customer" && r.Method == http.MethodPost {
-		s.upsertCustomer(w, r, correlationID)
+		s.upsertCustomer(w, r, correlationID, proposalID)
 		return
 	}
 
@@ -149,10 +180,62 @@ func (s *server) handleProposalRoutes(w http.ResponseWriter, r *http.Request, co
 		return
 	}
 
+	if len(segments) == 2 && segments[1] == "documents" && r.Method == http.MethodGet {
+		s.listDocuments(w, r, correlationID, proposalID)
+		return
+	}
+
+	if len(segments) == 4 && segments[1] == "documents" && segments[3] == "received" && r.Method == http.MethodPost {
+		s.markDocumentReceived(w, r, correlationID, proposalID, segments[2])
+		return
+	}
+
 	writeError(w, http.StatusNotFound, correlationID, "not_found", "rota nao encontrada", nil)
 }
 
-func (s *server) upsertCustomer(w http.ResponseWriter, r *http.Request, correlationID string) {
+func (s *server) getProposal(w http.ResponseWriter, r *http.Request, correlationID, proposalID string) {
+	var proposal backend.Proposal
+	if _, err := s.proposals.Get(r.Context(), "/internal/proposals/"+proposalID, correlationID, &proposal); err != nil {
+		writeError(w, http.StatusBadGateway, correlationID, "upstream_error", "falha ao consultar proposta", nil)
+		return
+	}
+
+	response := proposalResponse{
+		ProposalID: proposal.ProposalID,
+		Protocol:   proposal.Protocol,
+		Status:     proposal.Status,
+		CreatedAt:  proposal.CreatedAt,
+		UpdatedAt:  proposal.UpdatedAt,
+	}
+
+	var customer backend.Customer
+	if _, err := s.customers.Get(r.Context(), "/internal/proposals/"+proposalID+"/customer", correlationID, &customer); err == nil {
+		response.Customer = &customer
+	}
+
+	var documents backend.DocumentList
+	if _, err := s.documents.Get(r.Context(), "/internal/proposals/"+proposalID+"/documents", correlationID, &documents); err == nil {
+		response.Documents = documents.Documents
+	}
+
+	writeJSON(w, http.StatusOK, response)
+}
+
+func (s *server) getProposalStatus(w http.ResponseWriter, r *http.Request, correlationID, proposalID string) {
+	var proposal backend.Proposal
+	if _, err := s.proposals.Get(r.Context(), "/internal/proposals/"+proposalID, correlationID, &proposal); err != nil {
+		writeError(w, http.StatusBadGateway, correlationID, "upstream_error", "falha ao consultar status", nil)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, proposalStatusResponse{
+		ProposalID:    proposal.ProposalID,
+		Status:        proposal.Status,
+		LastUpdatedAt: proposal.UpdatedAt,
+	})
+}
+
+func (s *server) upsertCustomer(w http.ResponseWriter, r *http.Request, correlationID, proposalID string) {
 	var payload customerRequest
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 		writeError(w, http.StatusBadRequest, correlationID, "invalid_request", "payload invalido", nil)
@@ -165,6 +248,17 @@ func (s *server) upsertCustomer(w http.ResponseWriter, r *http.Request, correlat
 		})
 		return
 	}
+
+	var customer backend.Customer
+	if _, err := s.customers.Post(r.Context(), "/internal/proposals/"+proposalID+"/customer", correlationID, payload, &customer); err != nil {
+		writeError(w, http.StatusBadGateway, correlationID, "upstream_error", "falha ao salvar cliente", nil)
+		return
+	}
+
+	var proposal backend.Proposal
+	_, _ = s.proposals.Patch(r.Context(), "/internal/proposals/"+proposalID+"/status", correlationID, map[string]string{
+		"status": "documents_pending",
+	}, &proposal)
 
 	writeJSON(w, http.StatusAccepted, acceptedResponse{
 		Status:  "accepted",
@@ -186,14 +280,43 @@ func (s *server) createDocumentUploadURL(w http.ResponseWriter, r *http.Request,
 		return
 	}
 
-	documentID := "doc_" + randomToken(8)
-	fileKey := fmt.Sprintf("%s/%s/%s", proposalID, payload.DocumentType, payload.FileName)
+	var document backend.Document
+	if _, err := s.documents.Post(r.Context(), "/internal/proposals/"+proposalID+"/documents/upload-url", correlationID, payload, &document); err != nil {
+		writeError(w, http.StatusBadGateway, correlationID, "upstream_error", "falha ao gerar upload", nil)
+		return
+	}
 
 	writeJSON(w, http.StatusOK, documentUploadResponse{
-		DocumentID: documentID,
-		UploadURL:  "http://localhost:4566/mock-upload/" + fileKey,
-		FileKey:    fileKey,
+		DocumentID: document.DocumentID,
+		UploadURL:  document.UploadURL,
+		FileKey:    document.FileKey,
+		Status:     document.Status,
 	})
+}
+
+func (s *server) listDocuments(w http.ResponseWriter, r *http.Request, correlationID, proposalID string) {
+	var documents backend.DocumentList
+	if _, err := s.documents.Get(r.Context(), "/internal/proposals/"+proposalID+"/documents", correlationID, &documents); err != nil {
+		writeError(w, http.StatusBadGateway, correlationID, "upstream_error", "falha ao listar documentos", nil)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, documents)
+}
+
+func (s *server) markDocumentReceived(w http.ResponseWriter, r *http.Request, correlationID, proposalID, documentID string) {
+	var document backend.Document
+	if _, err := s.documents.Post(r.Context(), "/internal/proposals/"+proposalID+"/documents/"+documentID+"/received", correlationID, nil, &document); err != nil {
+		writeError(w, http.StatusBadGateway, correlationID, "upstream_error", "falha ao confirmar envio do documento", nil)
+		return
+	}
+
+	var proposal backend.Proposal
+	_, _ = s.proposals.Patch(r.Context(), "/internal/proposals/"+proposalID+"/status", correlationID, map[string]string{
+		"status": "documents_received",
+	}, &proposal)
+
+	writeJSON(w, http.StatusAccepted, document)
 }
 
 func getOrCreateCorrelationID(r *http.Request) string {
@@ -201,16 +324,7 @@ func getOrCreateCorrelationID(r *http.Request) string {
 		return value
 	}
 
-	return "corr_" + randomToken(8)
-}
-
-func randomToken(size int) string {
-	bytes := make([]byte, size)
-	if _, err := rand.Read(bytes); err != nil {
-		return time.Now().UTC().Format("20060102150405")
-	}
-
-	return hex.EncodeToString(bytes)[:size]
+	return "corr_" + time.Now().UTC().Format("20060102150405")
 }
 
 func writeError(w http.ResponseWriter, status int, correlationID, code, message string, details map[string]any) {
@@ -233,4 +347,10 @@ func writeJSONWithStatus(w http.ResponseWriter, status int, payload any) {
 	if err := json.NewEncoder(w).Encode(payload); err != nil {
 		http.Error(w, `{"code":"internal_error","message":"falha ao serializar resposta"}`, http.StatusInternalServerError)
 	}
+}
+
+func applyCORS(w http.ResponseWriter) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-Correlation-Id, Idempotency-Key")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, OPTIONS")
 }

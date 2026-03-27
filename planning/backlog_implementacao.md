@@ -210,12 +210,12 @@ Objetivo: habilitar a jornada principal do usuario no MVP.
 
 | ID | Item | Status | Dependencias | Saida esperada |
 | --- | --- | --- | --- | --- |
-| E3-01 | Criar aplicacao web base | pendente | E1-02 | App Next.js com estrutura inicial |
+| E3-01 | Criar aplicacao web base | concluido | E1-02 | App Next.js com estrutura inicial |
 | E3-02 | Implementar autenticacao inicial | pendente | E3-01 | Fluxo mockado ou OIDC-ready para evolucao |
-| E3-03 | Criar jornada de abertura de proposta | pendente | E3-01, E2-03 | Tela e fluxo para iniciar proposta |
-| E3-04 | Criar jornada de cadastro do cliente | pendente | E3-03, E2-03 | Formularios com validacao |
-| E3-05 | Criar jornada de upload de documentos | pendente | E3-03, E2-03 | Upload via URL assinada |
-| E3-06 | Criar consulta de status da proposta | pendente | E3-03, E2-03 | Tela com status, pendencias e decisao |
+| E3-03 | Criar jornada de abertura de proposta | concluido | E3-01, E2-03 | Tela e fluxo para iniciar proposta |
+| E3-04 | Criar jornada de cadastro do cliente | concluido | E3-03, E2-03 | Formularios com validacao |
+| E3-05 | Criar jornada de upload de documentos | concluido | E3-03, E2-03 | Upload via URL assinada |
+| E3-06 | Criar consulta de status da proposta | concluido | E3-03, E2-03 | Tela com status, pendencias e decisao |
 
 ### Epico 4 - Backend core
 
@@ -333,16 +333,16 @@ Objetivo: garantir repetibilidade, confianca e evolucao continua.
 
 ### Ciclo atual
 
-- Identificador: ciclo-4
+- Identificador: ciclo-5
 - Status: aberto
-- Objetivo: iniciar a jornada web e integrar o BFF ao backend core
+- Objetivo: iniciar o workflow assincrono e a simulacao das analises do MVP
 - Itens priorizados:
-  - E3-01 Criar aplicacao web base
-  - E3-03 Criar jornada de abertura de proposta
-  - E3-04 Criar jornada de cadastro do cliente
-  - E3-05 Criar jornada de upload de documentos
+  - E5-01 Desenhar workflow inicial da proposta
+  - E5-02 Implementar analise documental simulada
+  - E5-03 Implementar analise de credito simulada
+  - E5-04 Implementar analise de fraude simulada
 - Observacao:
-  - o BFF precisa deixar de ser stub e passar a consumir os servicos reais deste ciclo
+  - o BFF e o front ja deixaram de ser stub e agora podem consumir os resultados do workflow
 
 ## Entregas materializadas no ciclo-3
 
@@ -360,6 +360,14 @@ Objetivo: garantir repetibilidade, confianca e evolucao continua.
 - validacao de compilacao com `go test ./...` no modulo de cliente.
 - validacao de compilacao com `go test ./...` no modulo de documentos.
 
+## Entregas materializadas no ciclo-4
+
+- `BFF` integrado aos servicos reais de proposta, cliente e documento;
+- `BFF` com agregacao da proposta consolidada e suporte a CORS para o front;
+- app web em Next.js com jornada inicial de criacao de proposta, cadastro de cliente, upload e consulta de status;
+- validacao do `BFF` com `go test ./...`;
+- validacao do app web com `npm run typecheck` e `npm run build`.
+
 ### Historico
 
 | Ciclo | Status | Resumo |
@@ -368,3 +376,4 @@ Objetivo: garantir repetibilidade, confianca e evolucao continua.
 | ciclo-1 | concluido | Escopo do MVP, estrutura inicial do repositorio, padroes de desenvolvimento, entidades e maquina de estados definidos |
 | ciclo-2 | concluido | Contratos de API, eventos assincronos, padroes transversais e BFF inicial definidos e validados |
 | ciclo-3 | concluido | Backend core inicial entregue com Proposal Service, Customer Service, Document Service e persistencia em PostgreSQL |
+| ciclo-4 | concluido | BFF integrado ao backend core e front web base entregue com a jornada principal do MVP |
