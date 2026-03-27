@@ -13,11 +13,15 @@ import (
 )
 
 type stubStore struct {
-	items map[string]domain.Proposal
+	items           map[string]domain.Proposal
+	analysisResults map[string][]domain.AnalysisResult
 }
 
 func newStubStore() *stubStore {
-	return &stubStore{items: map[string]domain.Proposal{}}
+	return &stubStore{
+		items:           map[string]domain.Proposal{},
+		analysisResults: map[string][]domain.AnalysisResult{},
+	}
 }
 
 func (s *stubStore) Create(_ context.Context, proposal domain.Proposal) error {
@@ -44,6 +48,15 @@ func (s *stubStore) UpdateStatus(_ context.Context, proposalID, status string, u
 	proposal.UpdatedAt = updatedAt
 	s.items[proposalID] = proposal
 	return proposal, nil
+}
+
+func (s *stubStore) CreateAnalysisResult(_ context.Context, result domain.AnalysisResult) error {
+	s.analysisResults[result.ProposalID] = append(s.analysisResults[result.ProposalID], result)
+	return nil
+}
+
+func (s *stubStore) ListAnalysisResults(_ context.Context, proposalID string) ([]domain.AnalysisResult, error) {
+	return s.analysisResults[proposalID], nil
 }
 
 func TestCreateProposal(t *testing.T) {
@@ -81,5 +94,22 @@ func TestUpdateProposalStatusRejectsInvalidStatus(t *testing.T) {
 
 	if resp.Code != http.StatusBadRequest {
 		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, resp.Code)
+	}
+}
+
+func TestCreateAnalysisResult(t *testing.T) {
+	store := newStubStore()
+	proposal := domain.NewProposal("corr-test", time.Now().UTC())
+	_ = store.Create(context.Background(), proposal)
+
+	srv := NewServer(store)
+	body := bytes.NewBufferString(`{"analysis_type":"credit","result":"approved","provider":"mock-credit","score":720,"reason":"simulacao ok"}`)
+	req := httptest.NewRequest(http.MethodPost, "/internal/proposals/"+proposal.ID+"/analysis-results", body)
+	resp := httptest.NewRecorder()
+
+	srv.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusCreated {
+		t.Fatalf("expected status %d, got %d", http.StatusCreated, resp.Code)
 	}
 }

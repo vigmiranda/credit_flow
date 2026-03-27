@@ -82,6 +82,11 @@ func (s *server) handleProposalRoutes(w http.ResponseWriter, r *http.Request, co
 		return
 	}
 
+	if len(segments) == 3 && segments[2] == "analyze" && r.Method == http.MethodPost {
+		s.analyzeDocuments(w, r, correlationID, proposalID)
+		return
+	}
+
 	writeError(w, http.StatusNotFound, correlationID, "not_found", "rota nao encontrada", nil)
 }
 
@@ -137,6 +142,16 @@ func (s *server) markDocumentReceived(w http.ResponseWriter, r *http.Request, co
 	}
 
 	writeJSON(w, http.StatusAccepted, document)
+}
+
+func (s *server) analyzeDocuments(w http.ResponseWriter, r *http.Request, correlationID, proposalID string) {
+	documents, err := s.store.ListByProposalID(r.Context(), proposalID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, correlationID, "internal_error", "falha ao carregar documentos", nil)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, domain.AnalyzeDocuments(proposalID, documents, time.Now().UTC()))
 }
 
 func getOrCreateCorrelationID(r *http.Request) string {

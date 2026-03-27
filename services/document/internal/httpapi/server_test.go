@@ -84,3 +84,23 @@ func TestMarkDocumentReceived(t *testing.T) {
 		t.Fatalf("expected status %d, got %d", http.StatusAccepted, resp.Code)
 	}
 }
+
+func TestAnalyzeDocuments(t *testing.T) {
+	store := newStubStore()
+	document := domain.NewDocument("prop_123", domain.UploadRequest{
+		DocumentType: "id_front",
+		FileName:     "rg.jpg",
+		ContentType:  "image/jpeg",
+	}, "http://localhost:4566/mock-upload", time.Now().UTC()).MarkUploaded(time.Now().UTC())
+	_ = store.Create(context.Background(), document)
+
+	srv := NewServer(store, "http://localhost:4566/mock-upload")
+	req := httptest.NewRequest(http.MethodPost, "/internal/proposals/prop_123/documents/analyze", nil)
+	resp := httptest.NewRecorder()
+
+	srv.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, resp.Code)
+	}
+}

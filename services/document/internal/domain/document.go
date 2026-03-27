@@ -91,3 +91,7 @@ func randomToken(size int) string {
 
 	return hex.EncodeToString(bytes)[:size]
 }
+
+func containsKeyword(value, keyword string) bool {
+	return strings.Contains(strings.ToLower(value), strings.ToLower(keyword))
+}

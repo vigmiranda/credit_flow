@@ -27,6 +27,17 @@ func (r *ProposalRepository) EnsureSchema(ctx context.Context) error {
 		created_at TIMESTAMPTZ NOT NULL,
 		updated_at TIMESTAMPTZ NOT NULL
 	);
+
+	CREATE TABLE IF NOT EXISTS proposal_analysis_results (
+		id TEXT PRIMARY KEY,
+		proposal_id TEXT NOT NULL,
+		analysis_type TEXT NOT NULL,
+		result TEXT NOT NULL,
+		provider TEXT NOT NULL,
+		score INTEGER NOT NULL,
+		reason TEXT NOT NULL,
+		created_at TIMESTAMPTZ NOT NULL
+	);
 	`
 
 	_, err := r.db.ExecContext(ctx, query)
@@ -105,4 +116,68 @@ func (r *ProposalRepository) UpdateStatus(ctx context.Context, proposalID, statu
 	}
 
 	return proposal, nil
+}
+
+func (r *ProposalRepository) CreateAnalysisResult(ctx context.Context, result domain.AnalysisResult) error {
+	const deleteQuery = `
+	DELETE FROM proposal_analysis_results
+	WHERE proposal_id = $1 AND analysis_type = $2;
+	`
+	if _, err := r.db.ExecContext(ctx, deleteQuery, result.ProposalID, result.AnalysisType); err != nil {
+		return err
+	}
+
+	const insertQuery = `
+	INSERT INTO proposal_analysis_results (id, proposal_id, analysis_type, result, provider, score, reason, created_at)
+	VALUES ($1, $2, $3, $4, $5, $6, $7, $8);
+	`
+
+	_, err := r.db.ExecContext(
+		ctx,
+		insertQuery,
+		result.ID,
+		result.ProposalID,
+		result.AnalysisType,
+		result.Result,
+		result.Provider,
+		result.Score,
+		result.Reason,
+		result.CreatedAt,
+	)
+	return err
+}
+
+func (r *ProposalRepository) ListAnalysisResults(ctx context.Context, proposalID string) ([]domain.AnalysisResult, error) {
+	const query = `
+	SELECT id, proposal_id, analysis_type, result, provider, score, reason, created_at
+	FROM proposal_analysis_results
+	WHERE proposal_id = $1
+	ORDER BY created_at ASC;
+	`
+
+	rows, err := r.db.QueryContext(ctx, query, proposalID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var results []domain.AnalysisResult
+	for rows.Next() {
+		var result domain.AnalysisResult
+		if err := rows.Scan(
+			&result.ID,
+			&result.ProposalID,
+			&result.AnalysisType,
+			&result.Result,
+			&result.Provider,
+			&result.Score,
+			&result.Reason,
+			&result.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		results = append(results, result)
+	}
+
+	return results, rows.Err()
 }

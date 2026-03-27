@@ -28,8 +28,20 @@ export type Proposal = {
   status: string;
   customer?: Customer;
   documents?: Document[];
+  analysis_results?: AnalysisResult[];
   created_at: string;
   updated_at: string;
+};
+
+export type AnalysisResult = {
+  analysis_id?: string;
+  proposal_id: string;
+  analysis_type: string;
+  result: string;
+  provider: string;
+  score: number;
+  reason: string;
+  created_at?: string;
 };
 
 type CustomerPayload = {
@@ -100,4 +112,3 @@ export async function confirmDocumentReceived(proposalId: string, documentId: st
     method: "POST",
   });
 }
-

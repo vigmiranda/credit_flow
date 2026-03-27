@@ -30,10 +30,15 @@ type documentGateway interface {
 	Get(ctx context.Context, path, correlationID string, out any) (int, error)
 }
 
+type workflowGateway interface {
+	Post(ctx context.Context, path, correlationID string, payload any, out any) (int, error)
+}
+
 type server struct {
 	proposals proposalGateway
 	customers customerGateway
 	documents documentGateway
+	workflow  workflowGateway
 }
 
 type healthResponse struct {
@@ -54,13 +59,14 @@ type createProposalResponse struct {
 }
 
 type proposalResponse struct {
-	ProposalID string             `json:"proposal_id"`
-	Protocol   string             `json:"protocol"`
-	Status     string             `json:"status"`
-	Customer   *backend.Customer  `json:"customer,omitempty"`
-	Documents  []backend.Document `json:"documents,omitempty"`
-	CreatedAt  string             `json:"created_at"`
-	UpdatedAt  string             `json:"updated_at"`
+	ProposalID      string                   `json:"proposal_id"`
+	Protocol        string                   `json:"protocol"`
+	Status          string                   `json:"status"`
+	Customer        *backend.Customer        `json:"customer,omitempty"`
+	Documents       []backend.Document       `json:"documents,omitempty"`
+	AnalysisResults []backend.AnalysisResult `json:"analysis_results,omitempty"`
+	CreatedAt       string                   `json:"created_at"`
+	UpdatedAt       string                   `json:"updated_at"`
 }
 
 type proposalStatusResponse struct {
@@ -96,11 +102,12 @@ type documentUploadResponse struct {
 	Status     string `json:"status,omitempty"`
 }
 
-func NewServer(proposals proposalGateway, customers customerGateway, documents documentGateway) http.Handler {
+func NewServer(proposals proposalGateway, customers customerGateway, documents documentGateway, workflow workflowGateway) http.Handler {
 	return &server{
 		proposals: proposals,
 		customers: customers,
 		documents: documents,
+		workflow:  workflow,
 	}
 }
 
@@ -218,6 +225,11 @@ func (s *server) getProposal(w http.ResponseWriter, r *http.Request, correlation
 		response.Documents = documents.Documents
 	}
 
+	var analysisResults backend.AnalysisResultList
+	if _, err := s.proposals.Get(r.Context(), "/internal/proposals/"+proposalID+"/analysis-results", correlationID, &analysisResults); err == nil {
+		response.AnalysisResults = analysisResults.AnalysisResults
+	}
+
 	writeJSON(w, http.StatusOK, response)
 }
 
@@ -316,7 +328,16 @@ func (s *server) markDocumentReceived(w http.ResponseWriter, r *http.Request, co
 		"status": "documents_received",
 	}, &proposal)
 
+	go s.triggerWorkflow(proposalID, correlationID)
+
 	writeJSON(w, http.StatusAccepted, document)
+}
+
+func (s *server) triggerWorkflow(proposalID, correlationID string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	_, _ = s.workflow.Post(ctx, "/internal/proposals/"+proposalID+"/run-analyses", correlationID, nil, nil)
 }
 
 func getOrCreateCorrelationID(r *http.Request) string {

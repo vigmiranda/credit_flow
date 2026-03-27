@@ -42,6 +42,12 @@ const statusLabels: Record<string, string> = {
   awaiting_additional_documents: "Complementacao de documentos",
 };
 
+const analysisLabels: Record<string, string> = {
+  document: "Documentos",
+  credit: "Credito",
+  fraud: "Fraude",
+};
+
 function formatStatus(status?: string) {
   if (!status) {
     return "Nao iniciado";
@@ -140,6 +146,7 @@ export default function HomePage() {
   }
 
   const documents = proposal?.documents ?? [];
+  const analysisResults = proposal?.analysis_results ?? [];
 
   return (
     <main className="shell">
@@ -417,6 +424,31 @@ export default function HomePage() {
               ))
             )}
           </div>
+
+          <div className="analysis-section">
+            <div className="analysis-header">
+              <h3>Resultados das analises</h3>
+              <p>Persistidos no proposal service pelo workflow do MVP.</p>
+            </div>
+            {analysisResults.length === 0 ? (
+              <p className="empty-state">As analises ainda nao foram executadas para esta proposta.</p>
+            ) : (
+              <div className="collection">
+                {analysisResults.map((result) => (
+                  <div className="collection-item" key={result.analysis_type}>
+                    <div>
+                      <strong>{analysisLabels[result.analysis_type] ?? result.analysis_type}</strong>
+                      <span>{result.reason}</span>
+                    </div>
+                    <div className="collection-actions">
+                      <span className={`status-pill status-${result.result}`}>{result.result}</span>
+                      <span className="score-pill">score {result.score}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </article>
       </section>
 
@@ -427,4 +459,3 @@ export default function HomePage() {
     </main>
   );
 }
-

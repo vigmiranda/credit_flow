@@ -7,6 +7,7 @@ type Config struct {
 	ProposalServiceURL string
 	CustomerServiceURL string
 	DocumentServiceURL string
+	WorkflowServiceURL string
 }
 
 func Load() Config {
@@ -15,6 +16,7 @@ func Load() Config {
 		ProposalServiceURL: getEnv("PROPOSAL_SERVICE_URL", "http://localhost:8081"),
 		CustomerServiceURL: getEnv("CUSTOMER_SERVICE_URL", "http://localhost:8082"),
 		DocumentServiceURL: getEnv("DOCUMENT_SERVICE_URL", "http://localhost:8083"),
+		WorkflowServiceURL: getEnv("WORKFLOW_SERVICE_URL", "http://localhost:8084"),
 	}
 }
 

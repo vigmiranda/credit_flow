@@ -235,11 +235,11 @@ Objetivo: suportar o processamento desacoplado do fluxo de decisao.
 
 | ID | Item | Status | Dependencias | Saida esperada |
 | --- | --- | --- | --- | --- |
-| E5-01 | Desenhar workflow inicial da proposta | pendente | E2-02, E2-04 | Fluxo orquestrado do recebimento ate decisao |
-| E5-02 | Implementar analise documental simulada | pendente | E5-01, E4-04 | Resultado assincrono inicial para destravar fluxo |
-| E5-03 | Implementar analise de credito simulada | pendente | E5-01, E4-02 | Worker/processo com retorno de status |
-| E5-04 | Implementar analise de fraude simulada | pendente | E5-01, E4-02 | Worker/processo com retorno de status |
-| E5-05 | Consolidar decisao da proposta | pendente | E5-02, E5-03, E5-04 | Atualizacao final ou pendencia da proposta |
+| E5-01 | Desenhar workflow inicial da proposta | concluido | E2-02, E2-04 | Fluxo orquestrado do recebimento ate decisao |
+| E5-02 | Implementar analise documental simulada | concluido | E5-01, E4-04 | Resultado assincrono inicial para destravar fluxo |
+| E5-03 | Implementar analise de credito simulada | concluido | E5-01, E4-02 | Worker/processo com retorno de status |
+| E5-04 | Implementar analise de fraude simulada | concluido | E5-01, E4-02 | Worker/processo com retorno de status |
+| E5-05 | Consolidar decisao da proposta | concluido | E5-02, E5-03, E5-04 | Atualizacao final ou pendencia da proposta |
 
 ### Epico 6 - Notificacao e acompanhamento
 
@@ -333,16 +333,16 @@ Objetivo: garantir repetibilidade, confianca e evolucao continua.
 
 ### Ciclo atual
 
-- Identificador: ciclo-5
+- Identificador: ciclo-6
 - Status: aberto
-- Objetivo: iniciar o workflow assincrono e a simulacao das analises do MVP
+- Objetivo: iniciar notificacoes, historico do processo e base de qualidade
 - Itens priorizados:
-  - E5-01 Desenhar workflow inicial da proposta
-  - E5-02 Implementar analise documental simulada
-  - E5-03 Implementar analise de credito simulada
-  - E5-04 Implementar analise de fraude simulada
+  - E6-01 Implementar Notification Service basico
+  - E6-02 Registrar historico de comunicacoes
+  - E6-03 Expor timeline da proposta no front
+  - E8-01 Configurar lint e testes automatizados
 - Observacao:
-  - o BFF e o front ja deixaram de ser stub e agora podem consumir os resultados do workflow
+  - o ciclo anterior ja entrega workflow automatico com analises simuladas e decisao consolidada
 
 ## Entregas materializadas no ciclo-3
 
@@ -368,6 +368,17 @@ Objetivo: garantir repetibilidade, confianca e evolucao continua.
 - validacao do `BFF` com `go test ./...`;
 - validacao do app web com `npm run typecheck` e `npm run build`.
 
+## Entregas materializadas no ciclo-5
+
+- `workflow service` para orquestracao da analise documental, de credito e de fraude;
+- `credit-analysis service` e `fraud-analysis service` com regras simuladas e deterministicas;
+- analise documental simulada adicionada ao `document service`;
+- persistencia de `analysis_results` no `proposal service`;
+- `BFF` disparando o workflow apos confirmacao do documento;
+- front exibindo os resultados das analises na proposta consolidada;
+- documentacao do fluxo em `docs/workflow_inicial.md`;
+- validacao com `go test ./...` nos modulos `proposal`, `document`, `credit-analysis`, `fraud-analysis`, `workflow` e `bff`.
+
 ### Historico
 
 | Ciclo | Status | Resumo |
@@ -377,3 +388,4 @@ Objetivo: garantir repetibilidade, confianca e evolucao continua.
 | ciclo-2 | concluido | Contratos de API, eventos assincronos, padroes transversais e BFF inicial definidos e validados |
 | ciclo-3 | concluido | Backend core inicial entregue com Proposal Service, Customer Service, Document Service e persistencia em PostgreSQL |
 | ciclo-4 | concluido | BFF integrado ao backend core e front web base entregue com a jornada principal do MVP |
+| ciclo-5 | concluido | Workflow inicial entregue com analises simuladas, persistencia dos resultados e consolidacao automatica da proposta |

@@ -9,27 +9,21 @@ import (
 	"syscall"
 	"time"
 
-	"creditflow/services/bff/internal/backend"
-	"creditflow/services/bff/internal/config"
-	"creditflow/services/bff/internal/httpapi"
+	"creditflow/services/credit-analysis/internal/config"
+	"creditflow/services/credit-analysis/internal/httpapi"
 )
 
 func main() {
 	cfg := config.Load()
 
 	server := &http.Server{
-		Addr: ":" + cfg.Port,
-		Handler: httpapi.NewServer(
-			backend.NewClient(cfg.ProposalServiceURL),
-			backend.NewClient(cfg.CustomerServiceURL),
-			backend.NewClient(cfg.DocumentServiceURL),
-			backend.NewClient(cfg.WorkflowServiceURL),
-		),
+		Addr:              ":" + cfg.Port,
+		Handler:           httpapi.NewServer(),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
 	go func() {
-		log.Printf("bff listening on %s", server.Addr)
+		log.Printf("credit-analysis listening on %s", server.Addr)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("listen error: %v", err)
 		}

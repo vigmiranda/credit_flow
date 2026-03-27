@@ -17,6 +17,8 @@ type ProposalStore interface {
 	Create(ctx context.Context, proposal domain.Proposal) error
 	GetByID(ctx context.Context, proposalID string) (domain.Proposal, error)
 	UpdateStatus(ctx context.Context, proposalID, status string, updatedAt time.Time) (domain.Proposal, error)
+	CreateAnalysisResult(ctx context.Context, result domain.AnalysisResult) error
+	ListAnalysisResults(ctx context.Context, proposalID string) ([]domain.AnalysisResult, error)
 }
 
 type server struct {
@@ -32,6 +34,14 @@ type errorResponse struct {
 
 type updateStatusRequest struct {
 	Status string `json:"status"`
+}
+
+type createAnalysisResultRequest struct {
+	AnalysisType string `json:"analysis_type"`
+	Result       string `json:"result"`
+	Provider     string `json:"provider"`
+	Score        int    `json:"score"`
+	Reason       string `json:"reason"`
 }
 
 func NewServer(store ProposalStore) http.Handler {
@@ -87,6 +97,16 @@ func (s *server) handleProposalRoutes(w http.ResponseWriter, r *http.Request, co
 		return
 	}
 
+	if len(segments) == 2 && segments[1] == "analysis-results" && r.Method == http.MethodPost {
+		s.createAnalysisResult(w, r, correlationID, proposalID)
+		return
+	}
+
+	if len(segments) == 2 && segments[1] == "analysis-results" && r.Method == http.MethodGet {
+		s.listAnalysisResults(w, r, correlationID, proposalID)
+		return
+	}
+
 	writeError(w, http.StatusNotFound, correlationID, "not_found", "rota nao encontrada", nil)
 }
 
@@ -131,6 +151,57 @@ func (s *server) updateProposalStatus(w http.ResponseWriter, r *http.Request, co
 	}
 
 	writeJSON(w, http.StatusOK, proposal)
+}
+
+func (s *server) createAnalysisResult(w http.ResponseWriter, r *http.Request, correlationID, proposalID string) {
+	var payload createAnalysisResultRequest
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		writeError(w, http.StatusBadRequest, correlationID, "invalid_request", "payload invalido", nil)
+		return
+	}
+
+	if !domain.IsValidAnalysisType(payload.AnalysisType) {
+		writeError(w, http.StatusBadRequest, correlationID, "invalid_request", "analysis_type invalido", map[string]any{
+			"analysis_type": payload.AnalysisType,
+		})
+		return
+	}
+
+	if !domain.IsValidAnalysisResult(payload.Result) {
+		writeError(w, http.StatusBadRequest, correlationID, "invalid_request", "result invalido", map[string]any{
+			"result": payload.Result,
+		})
+		return
+	}
+
+	result := domain.NewAnalysisResult(
+		proposalID,
+		payload.AnalysisType,
+		payload.Result,
+		payload.Provider,
+		payload.Reason,
+		payload.Score,
+		time.Now().UTC(),
+	)
+	if err := s.store.CreateAnalysisResult(r.Context(), result); err != nil {
+		writeError(w, http.StatusInternalServerError, correlationID, "internal_error", "falha ao registrar analise", nil)
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, result)
+}
+
+func (s *server) listAnalysisResults(w http.ResponseWriter, r *http.Request, correlationID, proposalID string) {
+	results, err := s.store.ListAnalysisResults(r.Context(), proposalID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, correlationID, "internal_error", "falha ao listar analises", nil)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"proposal_id":      proposalID,
+		"analysis_results": results,
+	})
 }
 
 func getOrCreateCorrelationID(r *http.Request) string {

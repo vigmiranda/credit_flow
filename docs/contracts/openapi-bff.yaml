@@ -220,6 +220,10 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/DocumentDetails"
+        analysis_results:
+          type: array
+          items:
+            $ref: "#/components/schemas/AnalysisResult"
         created_at:
           type: string
           format: date-time
@@ -345,6 +349,26 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/DocumentDetails"
+    AnalysisResult:
+      type: object
+      properties:
+        analysis_id:
+          type: string
+        proposal_id:
+          type: string
+        analysis_type:
+          type: string
+        result:
+          type: string
+        provider:
+          type: string
+        score:
+          type: integer
+        reason:
+          type: string
+        created_at:
+          type: string
+          format: date-time
     AcceptedResponse:
       type: object
       required: [status, message]

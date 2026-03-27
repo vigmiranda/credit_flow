@@ -19,12 +19,11 @@ type Client struct {
 }
 
 type Proposal struct {
-	ProposalID    string `json:"proposal_id"`
-	Protocol      string `json:"protocol"`
-	Status        string `json:"status"`
-	CorrelationID string `json:"correlation_id,omitempty"`
-	CreatedAt     string `json:"created_at"`
-	UpdatedAt     string `json:"updated_at"`
+	ProposalID string `json:"proposal_id"`
+	Protocol   string `json:"protocol"`
+	Status     string `json:"status"`
+	CreatedAt  string `json:"created_at"`
+	UpdatedAt  string `json:"updated_at"`
 }
 
 type Customer struct {
@@ -36,28 +35,7 @@ type Customer struct {
 	Email         string  `json:"email"`
 	Phone         string  `json:"phone"`
 	MonthlyIncome float64 `json:"monthly_income"`
-	Address       string  `json:"address,omitempty"`
-	CreatedAt     string  `json:"created_at"`
-	UpdatedAt     string  `json:"updated_at"`
-}
-
-type Document struct {
-	DocumentID  string  `json:"document_id"`
-	ProposalID  string  `json:"proposal_id"`
-	Type        string  `json:"document_type"`
-	FileName    string  `json:"file_name"`
-	ContentType string  `json:"content_type"`
-	FileKey     string  `json:"file_key"`
-	Status      string  `json:"status"`
-	UploadURL   string  `json:"upload_url"`
-	UploadedAt  *string `json:"uploaded_at,omitempty"`
-	CreatedAt   string  `json:"created_at"`
-	UpdatedAt   string  `json:"updated_at"`
-}
-
-type DocumentList struct {
-	ProposalID string     `json:"proposal_id"`
-	Documents  []Document `json:"documents"`
+	Address       string  `json:"address"`
 }
 
 type AnalysisResult struct {
@@ -69,11 +47,6 @@ type AnalysisResult struct {
 	Score        int    `json:"score"`
 	Reason       string `json:"reason"`
 	CreatedAt    string `json:"created_at,omitempty"`
-}
-
-type AnalysisResultList struct {
-	ProposalID      string           `json:"proposal_id"`
-	AnalysisResults []AnalysisResult `json:"analysis_results"`
 }
 
 type ErrorResponse struct {
@@ -92,16 +65,19 @@ func NewClient(baseURL string) *Client {
 	}
 }
 
-func (c *Client) Post(ctx context.Context, path, correlationID string, payload any, out any) (int, error) {
-	return c.request(ctx, http.MethodPost, path, correlationID, payload, out)
+func (c *Client) Get(ctx context.Context, path, correlationID string, out any) error {
+	_, err := c.request(ctx, http.MethodGet, path, correlationID, nil, out)
+	return err
 }
 
-func (c *Client) Get(ctx context.Context, path, correlationID string, out any) (int, error) {
-	return c.request(ctx, http.MethodGet, path, correlationID, nil, out)
+func (c *Client) Post(ctx context.Context, path, correlationID string, payload any, out any) error {
+	_, err := c.request(ctx, http.MethodPost, path, correlationID, payload, out)
+	return err
 }
 
-func (c *Client) Patch(ctx context.Context, path, correlationID string, payload any, out any) (int, error) {
-	return c.request(ctx, http.MethodPatch, path, correlationID, payload, out)
+func (c *Client) Patch(ctx context.Context, path, correlationID string, payload any, out any) error {
+	_, err := c.request(ctx, http.MethodPatch, path, correlationID, payload, out)
+	return err
 }
 
 func (c *Client) request(ctx context.Context, method, path, correlationID string, payload any, out any) (int, error) {
@@ -118,6 +94,7 @@ func (c *Client) request(ctx context.Context, method, path, correlationID string
 	if err != nil {
 		return 0, err
 	}
+
 	req.Header.Set(headerCorrelationID, correlationID)
 	if payload != nil {
 		req.Header.Set("Content-Type", "application/json")

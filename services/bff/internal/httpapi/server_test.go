@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"creditflow/services/bff/internal/backend"
 )
@@ -56,22 +57,42 @@ func (s stubDocumentGateway) Get(ctx context.Context, path, correlationID string
 	return s.getFunc(ctx, path, correlationID, out)
 }
 
+type stubWorkflowGateway struct {
+	postFunc func(ctx context.Context, path, correlationID string, payload any, out any) (int, error)
+}
+
+func (s stubWorkflowGateway) Post(ctx context.Context, path, correlationID string, payload any, out any) (int, error) {
+	return s.postFunc(ctx, path, correlationID, payload, out)
+}
+
 func TestGetProposalAggregatesCustomerAndDocuments(t *testing.T) {
 	srv := NewServer(
 		stubProposalGateway{
 			getFunc: func(_ context.Context, path, _ string, out any) (int, error) {
-				if path != "/internal/proposals/prop_123" {
+				switch path {
+				case "/internal/proposals/prop_123":
+					proposal := out.(*backend.Proposal)
+					*proposal = backend.Proposal{
+						ProposalID: "prop_123",
+						Protocol:   "P-001",
+						Status:     "documents_pending",
+						CreatedAt:  "2026-03-27T10:00:00Z",
+						UpdatedAt:  "2026-03-27T10:05:00Z",
+					}
+					return http.StatusOK, nil
+				case "/internal/proposals/prop_123/analysis-results":
+					results := out.(*backend.AnalysisResultList)
+					*results = backend.AnalysisResultList{
+						ProposalID: "prop_123",
+						AnalysisResults: []backend.AnalysisResult{
+							{AnalysisType: "document", Result: "approved", Provider: "doc", Score: 700},
+						},
+					}
+					return http.StatusOK, nil
+				default:
 					t.Fatalf("unexpected proposal path %s", path)
 				}
-				proposal := out.(*backend.Proposal)
-				*proposal = backend.Proposal{
-					ProposalID: "prop_123",
-					Protocol:   "P-001",
-					Status:     "documents_pending",
-					CreatedAt:  "2026-03-27T10:00:00Z",
-					UpdatedAt:  "2026-03-27T10:05:00Z",
-				}
-				return http.StatusOK, nil
+				return 0, nil
 			},
 			postFunc: func(context.Context, string, string, any, any) (int, error) { return 0, errors.New("unexpected") },
 			patchFunc: func(context.Context, string, string, any, any) (int, error) {
@@ -110,6 +131,9 @@ func TestGetProposalAggregatesCustomerAndDocuments(t *testing.T) {
 			},
 			postFunc: func(context.Context, string, string, any, any) (int, error) { return 0, errors.New("unexpected") },
 		},
+		stubWorkflowGateway{
+			postFunc: func(context.Context, string, string, any, any) (int, error) { return 0, errors.New("unexpected") },
+		},
 	)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/proposals/prop_123", nil)
@@ -130,6 +154,9 @@ func TestGetProposalAggregatesCustomerAndDocuments(t *testing.T) {
 	}
 	if len(proposal.Documents) != 1 || proposal.Documents[0].DocumentID != "doc_123" {
 		t.Fatal("expected aggregated documents in response")
+	}
+	if len(proposal.AnalysisResults) != 1 || proposal.AnalysisResults[0].AnalysisType != "document" {
+		t.Fatal("expected aggregated analysis results in response")
 	}
 }
 
@@ -168,6 +195,9 @@ func TestUpsertCustomerUpdatesProposalStatus(t *testing.T) {
 			postFunc: func(context.Context, string, string, any, any) (int, error) { return 0, errors.New("unexpected") },
 			getFunc:  func(context.Context, string, string, any) (int, error) { return 0, errors.New("unexpected") },
 		},
+		stubWorkflowGateway{
+			postFunc: func(context.Context, string, string, any, any) (int, error) { return 0, errors.New("unexpected") },
+		},
 	)
 
 	body := bytes.NewBufferString(`{"full_name":"Maria Silva","cpf":"12345678901","birth_date":"1990-01-01","email":"maria@example.com","phone":"11999999999","monthly_income":5000}`)
@@ -180,5 +210,60 @@ func TestUpsertCustomerUpdatesProposalStatus(t *testing.T) {
 	}
 	if !patchCalled {
 		t.Fatal("expected proposal status update after customer upsert")
+	}
+}
+
+func TestMarkDocumentReceivedTriggersWorkflow(t *testing.T) {
+	workflowTriggered := make(chan struct{}, 1)
+	srv := NewServer(
+		stubProposalGateway{
+			postFunc: func(context.Context, string, string, any, any) (int, error) { return 0, errors.New("unexpected") },
+			getFunc:  func(context.Context, string, string, any) (int, error) { return 0, errors.New("unexpected") },
+			patchFunc: func(_ context.Context, path, _ string, payload any, out any) (int, error) {
+				if path != "/internal/proposals/prop_123/status" {
+					t.Fatalf("unexpected patch path %s", path)
+				}
+				return http.StatusOK, nil
+			},
+		},
+		stubCustomerGateway{
+			postFunc: func(context.Context, string, string, any, any) (int, error) { return 0, errors.New("unexpected") },
+			getFunc:  func(context.Context, string, string, any) (int, error) { return 0, errors.New("unexpected") },
+		},
+		stubDocumentGateway{
+			postFunc: func(_ context.Context, path, _ string, payload any, out any) (int, error) {
+				if path != "/internal/proposals/prop_123/documents/doc_123/received" {
+					t.Fatalf("unexpected document path %s", path)
+				}
+				document := out.(*backend.Document)
+				document.DocumentID = "doc_123"
+				document.Status = "uploaded"
+				return http.StatusAccepted, nil
+			},
+			getFunc: func(context.Context, string, string, any) (int, error) { return 0, errors.New("unexpected") },
+		},
+		stubWorkflowGateway{
+			postFunc: func(_ context.Context, path, _ string, payload any, out any) (int, error) {
+				if path != "/internal/proposals/prop_123/run-analyses" {
+					t.Fatalf("unexpected workflow path %s", path)
+				}
+				workflowTriggered <- struct{}{}
+				return http.StatusAccepted, nil
+			},
+		},
+	)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/proposals/prop_123/documents/doc_123/received", nil)
+	resp := httptest.NewRecorder()
+	srv.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusAccepted {
+		t.Fatalf("expected status %d, got %d", http.StatusAccepted, resp.Code)
+	}
+
+	select {
+	case <-workflowTriggered:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("expected workflow trigger after document confirmation")
 	}
 }

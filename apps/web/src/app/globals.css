@@ -275,6 +275,22 @@ select:focus {
   gap: 12px;
 }
 
+.analysis-section {
+  margin-top: 22px;
+  display: grid;
+  gap: 14px;
+}
+
+.analysis-header h3 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.analysis-header p {
+  margin: 6px 0 0;
+  color: var(--muted);
+}
+
 .collection-item {
   display: flex;
   align-items: center;
@@ -315,9 +331,26 @@ select:focus {
 }
 
 .status-uploaded,
-.status-documents_received {
+.status-documents_received,
+.status-approved {
   background: rgba(28, 102, 96, 0.14);
   color: var(--secondary);
+}
+
+.status-rejected {
+  background: rgba(182, 84, 45, 0.16);
+  color: var(--primary-strong);
+}
+
+.status-manual_review,
+.status-awaiting_additional_documents {
+  background: rgba(95, 79, 27, 0.12);
+  color: #6b5710;
+}
+
+.score-pill {
+  color: var(--muted);
+  font-size: 0.9rem;
 }
 
 .empty-state {
@@ -354,4 +387,3 @@ select:focus {
     align-items: flex-start;
   }
 }
-
