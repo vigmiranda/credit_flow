@@ -15,6 +15,7 @@ import (
 	"creditflow/services/document/internal/config"
 	"creditflow/services/document/internal/httpapi"
 	"creditflow/services/document/internal/repository/postgres"
+	miniostorage "creditflow/services/document/internal/storage/minio"
 )
 
 func main() {
@@ -38,9 +39,24 @@ func main() {
 		log.Fatalf("ensure schema: %v", err)
 	}
 
+	storage, err := miniostorage.New(miniostorage.Config{
+		Endpoint:       cfg.StorageEndpoint,
+		PublicEndpoint: cfg.StoragePublicEndpoint,
+		AccessKey:      cfg.StorageAccessKey,
+		SecretKey:      cfg.StorageSecretKey,
+		BucketName:     cfg.StorageBucketName,
+		UseSSL:         cfg.StorageUseSSL,
+	})
+	if err != nil {
+		log.Fatalf("new storage: %v", err)
+	}
+	if err := storage.EnsureBucket(ctx); err != nil {
+		log.Fatalf("ensure bucket: %v", err)
+	}
+
 	server := &http.Server{
 		Addr:              ":" + cfg.Port,
-		Handler:           httpapi.NewServer(repo, cfg.UploadBaseURL),
+		Handler:           httpapi.NewServer(repo, storage.PublicURL(""), storage),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 

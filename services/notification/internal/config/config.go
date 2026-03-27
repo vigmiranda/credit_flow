@@ -10,6 +10,11 @@ type Config struct {
 	Port          string
 	DatabaseURL   string
 	EncryptionKey string
+	SMTPHost      string
+	SMTPPort      string
+	SMTPUsername  string
+	SMTPPassword  string
+	SMTPFrom      string
 }
 
 func Load() Config {
@@ -25,6 +30,11 @@ func Load() Config {
 			"NOTIFICATION_SERVICE_ENCRYPTION_KEY_FILE",
 			"credit-flow-local-notification-key",
 		),
+		SMTPHost:     getEnv("NOTIFICATION_SMTP_HOST", "localhost"),
+		SMTPPort:     getEnv("NOTIFICATION_SMTP_PORT", "1025"),
+		SMTPUsername: getEnv("NOTIFICATION_SMTP_USERNAME", ""),
+		SMTPPassword: getEnv("NOTIFICATION_SMTP_PASSWORD", ""),
+		SMTPFrom:     getEnv("NOTIFICATION_SMTP_FROM", "credit-flow@local.test"),
 	}
 }
 

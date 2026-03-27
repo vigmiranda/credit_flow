@@ -3,10 +3,10 @@
 import { useState } from "react";
 
 import {
-  confirmDocumentReceived,
   createDocumentUploadUrl,
   createProposal,
   getProposal,
+  uploadDocumentContent,
   upsertCustomer,
   type Document,
   type Proposal,
@@ -77,6 +77,7 @@ type HomePageProps = {
 export default function HomePage({ session }: HomePageProps) {
   const [proposal, setProposal] = useState<Proposal | null>(null);
   const [latestDocument, setLatestDocument] = useState<Document | null>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [customerForm, setCustomerForm] = useState(initialCustomerForm);
   const [documentForm, setDocumentForm] = useState(initialDocumentForm);
   const [message, setMessage] = useState("Pronto para iniciar a jornada do MVP.");
@@ -130,35 +131,40 @@ export default function HomePage({ session }: HomePageProps) {
     }
 
     setPendingAction("create-upload");
-    setMessage("Gerando URL de upload...");
+    setMessage("Registrando documento...");
 
     try {
       const document = await createDocumentUploadUrl(proposal.proposal_id, documentForm);
       setLatestDocument(document);
       await syncProposal(proposal.proposal_id);
-      setMessage("Documento registrado. Falta confirmar o recebimento.");
+      setMessage("Documento registrado. Agora envie o arquivo para o storage.");
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Falha ao gerar upload.");
+      setMessage(error instanceof Error ? error.message : "Falha ao registrar documento.");
     } finally {
       setPendingAction(null);
     }
   }
 
-  async function handleConfirmDocument(documentId: string) {
-    if (!proposal) {
+  async function handleUploadDocument(document: Document) {
+    if (!proposal || !selectedFile) {
       return;
     }
 
-    setPendingAction(`confirm-${documentId}`);
-    setMessage("Confirmando recebimento do documento...");
+    setPendingAction(`upload-${document.document_id}`);
+    setMessage("Enviando arquivo para o storage...");
 
     try {
-      const document = await confirmDocumentReceived(proposal.proposal_id, documentId);
-      setLatestDocument(document);
+      const uploaded = await uploadDocumentContent(
+        proposal.proposal_id,
+        document.document_id,
+        selectedFile,
+      );
+      setLatestDocument(uploaded);
+      setSelectedFile(null);
       await syncProposal(proposal.proposal_id);
-      setMessage("Documento confirmado e proposta atualizada.");
+      setMessage("Documento enviado e proposta atualizada.");
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Falha ao confirmar documento.");
+      setMessage(error instanceof Error ? error.message : "Falha ao enviar documento.");
     } finally {
       setPendingAction(null);
     }
@@ -179,7 +185,7 @@ export default function HomePage({ session }: HomePageProps) {
       timestamp: entry.created_at,
       kind: "notification" as const,
       title: `Notificacao ${entry.channel}`,
-      detail: entry.message,
+      detail: `${entry.message} (${entry.status})`,
     })),
   ].sort((left, right) => new Date(right.timestamp).getTime() - new Date(left.timestamp).getTime());
 
@@ -190,7 +196,7 @@ export default function HomePage({ session }: HomePageProps) {
           <p className="eyebrow">Sessao ativa</p>
           <strong>{session.name}</strong>
           <span>
-            {session.email} · {session.role}
+            {session.email} - {session.role}
           </span>
         </div>
         <form action="/api/auth/logout" method="post">
@@ -205,8 +211,8 @@ export default function HomePage({ session }: HomePageProps) {
           <p className="eyebrow">Credit Flow MVP</p>
           <h1>Jornada inicial para propostas de cartao, do protocolo ao documento.</h1>
           <p className="lead">
-            Este corte conecta o front ao BFF e aos servicos de proposta, cliente e documento
-            ja implementados.
+            Este corte conecta o front ao BFF e aos servicos de proposta, cliente, documento,
+            workflow e notificacao ja implementados.
           </p>
         </div>
         <div className="hero-panel">
@@ -354,7 +360,7 @@ export default function HomePage({ session }: HomePageProps) {
             <span className="step-index">03</span>
             <div>
               <h2>Documento</h2>
-              <p>Geracao da URL e confirmacao manual do recebimento no MVP.</p>
+              <p>Registro do documento e envio real do arquivo para o storage S3-compatible.</p>
             </div>
           </div>
           <div className="form-grid">
@@ -395,6 +401,24 @@ export default function HomePage({ session }: HomePageProps) {
                 }
               />
             </label>
+            <label className="full-width">
+              Arquivo
+              <input
+                type="file"
+                accept=".jpg,.jpeg,.png,.pdf"
+                onChange={(event) => {
+                  const file = event.target.files?.[0] ?? null;
+                  setSelectedFile(file);
+                  if (file) {
+                    setDocumentForm((current) => ({
+                      ...current,
+                      file_name: file.name,
+                      content_type: file.type || current.content_type,
+                    }));
+                  }
+                }}
+              />
+            </label>
           </div>
           <div className="button-row">
             <button
@@ -402,23 +426,28 @@ export default function HomePage({ session }: HomePageProps) {
               onClick={handleCreateUploadUrl}
               disabled={!proposal || pendingAction !== null}
             >
-              {pendingAction === "create-upload" ? "Gerando..." : "Gerar upload"}
+              {pendingAction === "create-upload" ? "Registrando..." : "Registrar documento"}
             </button>
             <button
               className="ghost-button"
-              onClick={() => latestDocument && handleConfirmDocument(latestDocument.document_id)}
-              disabled={!latestDocument || pendingAction !== null}
+              onClick={() => latestDocument && handleUploadDocument(latestDocument)}
+              disabled={!latestDocument || !selectedFile || pendingAction !== null}
             >
-              Confirmar ultimo envio
+              {pendingAction === `upload-${latestDocument?.document_id}`
+                ? "Enviando..."
+                : "Enviar ultimo arquivo"}
             </button>
           </div>
           {latestDocument ? (
             <div className="upload-preview">
               <span>Ultimo documento</span>
               <strong>{latestDocument.document_id}</strong>
-              <a href={latestDocument.upload_url} target="_blank" rel="noreferrer">
-                Abrir URL simulada
-              </a>
+              <span>{latestDocument.file_key}</span>
+              {latestDocument.storage_url ? (
+                <a href={latestDocument.storage_url} target="_blank" rel="noreferrer">
+                  Abrir arquivo no storage
+                </a>
+              ) : null}
             </div>
           ) : null}
         </article>
@@ -455,18 +484,21 @@ export default function HomePage({ session }: HomePageProps) {
                   <div>
                     <strong>{document.document_type}</strong>
                     <span>{document.file_name}</span>
+                    {document.storage_url ? (
+                      <a href={document.storage_url} target="_blank" rel="noreferrer">
+                        {document.storage_url}
+                      </a>
+                    ) : null}
                   </div>
                   <div className="collection-actions">
                     <span className={`status-pill status-${document.status}`}>{document.status}</span>
                     {document.status !== "uploaded" ? (
                       <button
                         className="ghost-button"
-                        onClick={() => handleConfirmDocument(document.document_id)}
-                        disabled={pendingAction !== null}
+                        onClick={() => handleUploadDocument(document)}
+                        disabled={!selectedFile || pendingAction !== null}
                       >
-                        {pendingAction === `confirm-${document.document_id}`
-                          ? "Confirmando..."
-                          : "Confirmar"}
+                        {pendingAction === `upload-${document.document_id}` ? "Enviando..." : "Enviar"}
                       </button>
                     ) : null}
                   </div>

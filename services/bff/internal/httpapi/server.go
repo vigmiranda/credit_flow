@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -28,6 +29,7 @@ type customerGateway interface {
 type documentGateway interface {
 	Post(ctx context.Context, path, correlationID string, payload any, out any) (int, error)
 	Get(ctx context.Context, path, correlationID string, out any) (int, error)
+	UploadMultipart(ctx context.Context, path, correlationID, fieldName, fileName, contentType string, content []byte, out any) (int, error)
 }
 
 type workflowGateway interface {
@@ -107,6 +109,7 @@ type documentUploadResponse struct {
 	DocumentID string `json:"document_id"`
 	UploadURL  string `json:"upload_url"`
 	FileKey    string `json:"file_key"`
+	StorageURL string `json:"storage_url,omitempty"`
 	Status     string `json:"status,omitempty"`
 }
 
@@ -203,6 +206,11 @@ func (s *server) handleProposalRoutes(w http.ResponseWriter, r *http.Request, co
 
 	if len(segments) == 4 && segments[1] == "documents" && segments[3] == "received" && r.Method == http.MethodPost {
 		s.markDocumentReceived(w, r, correlationID, proposalID, segments[2])
+		return
+	}
+
+	if len(segments) == 4 && segments[1] == "documents" && segments[3] == "content" && r.Method == http.MethodPost {
+		s.uploadDocumentContent(w, r, correlationID, proposalID, segments[2])
 		return
 	}
 
@@ -320,8 +328,9 @@ func (s *server) createDocumentUploadURL(w http.ResponseWriter, r *http.Request,
 
 	writeJSON(w, http.StatusOK, documentUploadResponse{
 		DocumentID: document.DocumentID,
-		UploadURL:  document.UploadURL,
+		UploadURL:  "/api/v1/proposals/" + proposalID + "/documents/" + document.DocumentID + "/content",
 		FileKey:    document.FileKey,
+		StorageURL: document.StorageURL,
 		Status:     document.Status,
 	})
 }
@@ -340,6 +349,56 @@ func (s *server) markDocumentReceived(w http.ResponseWriter, r *http.Request, co
 	var document backend.Document
 	if _, err := s.documents.Post(r.Context(), "/internal/proposals/"+proposalID+"/documents/"+documentID+"/received", correlationID, nil, &document); err != nil {
 		writeError(w, http.StatusBadGateway, correlationID, "upstream_error", "falha ao confirmar envio do documento", nil)
+		return
+	}
+
+	var proposal backend.Proposal
+	_, _ = s.proposals.Patch(r.Context(), "/internal/proposals/"+proposalID+"/status", correlationID, map[string]string{
+		"status": "documents_received",
+	}, &proposal)
+	if email, ok := s.fetchCustomerEmail(r.Context(), proposalID, correlationID); ok {
+		s.sendNotification(r.Context(), proposalID, email, "documents_received", "Recebemos seus documentos e vamos iniciar as analises.", correlationID)
+	}
+
+	go s.triggerWorkflow(proposalID, correlationID)
+
+	writeJSON(w, http.StatusAccepted, document)
+}
+
+func (s *server) uploadDocumentContent(w http.ResponseWriter, r *http.Request, correlationID, proposalID, documentID string) {
+	if err := r.ParseMultipartForm(16 << 20); err != nil {
+		writeError(w, http.StatusBadRequest, correlationID, "invalid_request", "arquivo invalido", nil)
+		return
+	}
+
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, correlationID, "invalid_request", "arquivo obrigatorio", map[string]any{
+			"required_fields": []string{"file"},
+		})
+		return
+	}
+	defer file.Close()
+
+	content, err := io.ReadAll(file)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, correlationID, "internal_error", "falha ao ler arquivo", nil)
+		return
+	}
+
+	contentType := header.Header.Get("Content-Type")
+	var document backend.Document
+	if _, err := s.documents.UploadMultipart(
+		r.Context(),
+		"/internal/proposals/"+proposalID+"/documents/"+documentID+"/content",
+		correlationID,
+		"file",
+		header.Filename,
+		contentType,
+		content,
+		&document,
+	); err != nil {
+		writeError(w, http.StatusBadGateway, correlationID, "upstream_error", "falha ao enviar documento", nil)
 		return
 	}
 

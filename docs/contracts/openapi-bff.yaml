@@ -146,6 +146,36 @@ paths:
                 $ref: "#/components/schemas/DocumentDetails"
         "404":
           $ref: "#/components/responses/NotFound"
+  /api/v1/proposals/{proposalId}/documents/{documentId}/content:
+    post:
+      summary: Enviar conteudo do documento
+      operationId: uploadDocumentContent
+      parameters:
+        - $ref: "#/components/parameters/ProposalId"
+        - $ref: "#/components/parameters/DocumentId"
+        - $ref: "#/components/parameters/CorrelationId"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "202":
+          description: Documento enviado e workflow disparado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocumentDetails"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
 components:
   parameters:
     ProposalId:
@@ -290,6 +320,9 @@ components:
           type: string
         file_key:
           type: string
+        storage_url:
+          type: string
+          example: http://localhost:9000/proposal-documents/prop_123/id_front/rg.jpg
         status:
           type: string
     CustomerDetails:
@@ -342,6 +375,8 @@ components:
         status:
           type: string
         upload_url:
+          type: string
+        storage_url:
           type: string
         uploaded_at:
           type: string

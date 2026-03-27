@@ -18,8 +18,13 @@ type NotificationStore interface {
 	ListByProposalID(ctx context.Context, proposalID string) ([]domain.Notification, error)
 }
 
+type NotificationSender interface {
+	Send(notification domain.Notification) error
+}
+
 type server struct {
-	store NotificationStore
+	store  NotificationStore
+	sender NotificationSender
 }
 
 type createNotificationRequest struct {
@@ -37,8 +42,8 @@ type errorResponse struct {
 	Details       map[string]any `json:"details,omitempty"`
 }
 
-func NewServer(store NotificationStore) http.Handler {
-	return &server{store: store}
+func NewServer(store NotificationStore, sender NotificationSender) http.Handler {
+	return &server{store: store, sender: sender}
 }
 
 func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -100,6 +105,9 @@ func (s *server) createNotification(w http.ResponseWriter, r *http.Request, corr
 		payload.TriggerStatus,
 		time.Now().UTC(),
 	)
+	if err := s.sender.Send(notification); err != nil {
+		notification = notification.MarkFailed(time.Now().UTC())
+	}
 	if err := s.store.Create(r.Context(), notification); err != nil {
 		writeError(w, http.StatusInternalServerError, correlationID, "internal_error", "falha ao registrar notificacao", nil)
 		return

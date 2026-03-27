@@ -19,6 +19,7 @@ export type Document = {
   file_key: string;
   status: string;
   upload_url: string;
+  storage_url?: string;
   uploaded_at?: string;
 };
 
@@ -128,6 +129,28 @@ export async function createDocumentUploadUrl(proposalId: string, payload: Docum
     method: "POST",
     body: JSON.stringify(payload),
   });
+}
+
+export async function uploadDocumentContent(proposalId: string, documentId: string, file: File) {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const response = await fetch(
+    `${DEFAULT_BFF_URL}/api/v1/proposals/${proposalId}/documents/${documentId}/content`,
+    {
+      method: "POST",
+      body: formData,
+    },
+  );
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({
+      message: "Falha ao enviar documento.",
+    }));
+    throw new Error(error.message ?? "Falha ao enviar documento.");
+  }
+
+  return response.json() as Promise<Document>;
 }
 
 export async function confirmDocumentReceived(proposalId: string, documentId: string) {

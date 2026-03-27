@@ -26,6 +26,7 @@ type Document struct {
 	FileKey     string     `json:"file_key"`
 	Status      string     `json:"status"`
 	UploadURL   string     `json:"upload_url"`
+	StorageURL  string     `json:"storage_url,omitempty"`
 	UploadedAt  *time.Time `json:"uploaded_at,omitempty"`
 	CreatedAt   time.Time  `json:"created_at"`
 	UpdatedAt   time.Time  `json:"updated_at"`
@@ -57,9 +58,10 @@ func (r UploadRequest) Validate() map[string]any {
 	return map[string]any{"invalid_fields": fields}
 }
 
-func NewDocument(proposalID string, request UploadRequest, uploadBaseURL string, now time.Time) Document {
+func NewDocument(proposalID string, request UploadRequest, storageBaseURL string, now time.Time) Document {
 	fileName := filepath.Base(strings.TrimSpace(request.FileName))
 	fileKey := fmt.Sprintf("%s/%s/%s", proposalID, strings.TrimSpace(request.DocumentType), fileName)
+	storageURL := strings.TrimRight(storageBaseURL, "/") + "/" + fileKey
 
 	return Document{
 		ID:          "doc_" + randomToken(12),
@@ -69,7 +71,7 @@ func NewDocument(proposalID string, request UploadRequest, uploadBaseURL string,
 		ContentType: strings.TrimSpace(request.ContentType),
 		FileKey:     fileKey,
 		Status:      StatusUploadURLGenerated,
-		UploadURL:   strings.TrimRight(uploadBaseURL, "/") + "/" + fileKey,
+		StorageURL:  storageURL,
 		CreatedAt:   now.UTC(),
 		UpdatedAt:   now.UTC(),
 	}
@@ -77,6 +79,7 @@ func NewDocument(proposalID string, request UploadRequest, uploadBaseURL string,
 
 func (d Document) MarkUploaded(now time.Time) Document {
 	d.Status = StatusUploaded
+	d.UploadURL = ""
 	d.UpdatedAt = now.UTC()
 	uploadedAt := now.UTC()
 	d.UploadedAt = &uploadedAt

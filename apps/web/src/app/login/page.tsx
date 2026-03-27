@@ -10,6 +10,12 @@ export default async function LoginPage() {
   }
 
   const authConfig = getAuthConfig();
+  const oidcReady = Boolean(
+    authConfig.issuerUrl &&
+      authConfig.clientId &&
+      authConfig.redirectUri &&
+      authConfig.authorizeUrl,
+  );
 
   return (
     <main className="auth-shell">
@@ -17,8 +23,8 @@ export default async function LoginPage() {
         <p className="eyebrow">Acesso</p>
         <h1>Entrar para operar a jornada do Credit Flow.</h1>
         <p className="lead">
-          O ambiente atual usa autenticacao mock com sessao em cookie. A estrutura de
-          configuracao ja aceita migracao futura para OIDC sem trocar a experiencia principal.
+          O ambiente atual suporta sessao mock e ja aceita redirecionamento para um provedor
+          OIDC com callback dedicado no front.
         </p>
         <div className="auth-hints">
           <div>
@@ -33,6 +39,10 @@ export default async function LoginPage() {
             <span>Redirect previsto</span>
             <strong>{authConfig.redirectUri}</strong>
           </div>
+          <div>
+            <span>Authorize URL</span>
+            <strong>{authConfig.authorizeUrl || "nao definido"}</strong>
+          </div>
         </div>
       </section>
 
@@ -41,42 +51,66 @@ export default async function LoginPage() {
           <span className="step-index">ID</span>
           <div>
             <h2>Login operacional</h2>
-            <p>Use o modo mock para navegar no MVP e preservar a porta de migracao para OIDC.</p>
+            <p>Use login mock no ambiente local ou inicie o fluxo OIDC quando o issuer estiver configurado.</p>
           </div>
         </div>
 
-        <form action="/api/auth/mock-login" method="post" className="form-grid">
-          <label>
-            Nome
-            <input name="name" defaultValue="Maria Operadora" placeholder="Maria Operadora" />
-          </label>
-          <label>
-            E-mail
-            <input
-              name="email"
-              type="email"
-              defaultValue="maria.operadora@creditflow.local"
-              placeholder="maria.operadora@creditflow.local"
-            />
-          </label>
-          <label>
-            Perfil
-            <select name="role" defaultValue="analyst">
-              <option value="analyst">analyst</option>
-              <option value="supervisor">supervisor</option>
-              <option value="admin">admin</option>
-            </select>
-          </label>
-          <label>
-            User ID
-            <input name="user_id" defaultValue="usr_mock_001" placeholder="usr_mock_001" />
-          </label>
-          <div className="auth-actions">
-            <button className="primary-button" type="submit">
-              Entrar no MVP
-            </button>
+        {authConfig.mode === "mock" ? (
+          <form action="/api/auth/mock-login" method="post" className="form-grid">
+            <label>
+              Nome
+              <input name="name" defaultValue="Maria Operadora" placeholder="Maria Operadora" />
+            </label>
+            <label>
+              E-mail
+              <input
+                name="email"
+                type="email"
+                defaultValue="maria.operadora@creditflow.local"
+                placeholder="maria.operadora@creditflow.local"
+              />
+            </label>
+            <label>
+              Perfil
+              <select name="role" defaultValue="analyst">
+                <option value="analyst">analyst</option>
+                <option value="supervisor">supervisor</option>
+                <option value="admin">admin</option>
+              </select>
+            </label>
+            <label>
+              User ID
+              <input name="user_id" defaultValue="usr_mock_001" placeholder="usr_mock_001" />
+            </label>
+            <div className="auth-actions">
+              <button className="primary-button" type="submit">
+                Entrar no MVP
+              </button>
+            </div>
+          </form>
+        ) : (
+          <div className="form-grid">
+            <div className="full-width">
+              <p className="lead">
+                O front ja valida `state`, recebe `code` no callback e cria a sessao local.
+              </p>
+            </div>
+            <div className="auth-actions">
+              <a
+                className="primary-button"
+                href={oidcReady ? "/api/auth/oidc-login" : "#"}
+                aria-disabled={!oidcReady}
+              >
+                Iniciar login OIDC
+              </a>
+            </div>
+            {!oidcReady ? (
+              <p className="empty-state">
+                Configure `OIDC_ISSUER_URL`, `OIDC_CLIENT_ID` e `OIDC_REDIRECT_URI` para habilitar o redirecionamento.
+              </p>
+            ) : null}
           </div>
-        </form>
+        )}
       </section>
     </main>
   );

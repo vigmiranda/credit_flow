@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
+	"net/textproto"
 	"strings"
 	"time"
 )
@@ -50,6 +52,7 @@ type Document struct {
 	FileKey     string  `json:"file_key"`
 	Status      string  `json:"status"`
 	UploadURL   string  `json:"upload_url"`
+	StorageURL  string  `json:"storage_url,omitempty"`
 	UploadedAt  *string `json:"uploaded_at,omitempty"`
 	CreatedAt   string  `json:"created_at"`
 	UpdatedAt   string  `json:"updated_at"`
@@ -133,6 +136,62 @@ func (c *Client) Get(ctx context.Context, path, correlationID string, out any) (
 
 func (c *Client) Patch(ctx context.Context, path, correlationID string, payload any, out any) (int, error) {
 	return c.request(ctx, http.MethodPatch, path, correlationID, payload, out)
+}
+
+func (c *Client) UploadMultipart(ctx context.Context, path, correlationID, fieldName, fileName, contentType string, content []byte, out any) (int, error) {
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+
+	partHeader := textproto.MIMEHeader{}
+	partHeader.Set("Content-Disposition", fmt.Sprintf(`form-data; name="%s"; filename="%s"`, fieldName, fileName))
+	if strings.TrimSpace(contentType) != "" {
+		partHeader.Set("Content-Type", contentType)
+	}
+
+	part, err := writer.CreatePart(partHeader)
+	if err != nil {
+		return 0, err
+	}
+	if _, err := part.Write(content); err != nil {
+		return 0, err
+	}
+	if err := writer.Close(); err != nil {
+		return 0, err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL+path, body)
+	if err != nil {
+		return 0, err
+	}
+	req.Header.Set(headerCorrelationID, correlationID)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+
+	resp, err := c.HTTP.Do(req)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= http.StatusBadRequest {
+		var apiErr ErrorResponse
+		if err := json.NewDecoder(resp.Body).Decode(&apiErr); err != nil {
+			return resp.StatusCode, fmt.Errorf("backend status %d", resp.StatusCode)
+		}
+		if apiErr.Message == "" {
+			apiErr.Message = "backend error"
+		}
+		return resp.StatusCode, fmt.Errorf("%s", apiErr.Message)
+	}
+
+	if out == nil {
+		return resp.StatusCode, nil
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+		return resp.StatusCode, err
+	}
+
+	return resp.StatusCode, nil
 }
 
 func (c *Client) request(ctx context.Context, method, path, correlationID string, payload any, out any) (int, error) {

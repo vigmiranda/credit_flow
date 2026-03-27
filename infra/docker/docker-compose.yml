@@ -76,7 +76,13 @@ services:
     environment:
       DOCUMENT_SERVICE_PORT: "8083"
       DOCUMENT_SERVICE_DATABASE_URL: postgres://credit_flow:credit_flow@postgres:5432/credit_flow?sslmode=disable
-      DOCUMENT_SERVICE_UPLOAD_BASE_URL: http://localhost:9000/mock-upload
+      DOCUMENT_SERVICE_UPLOAD_BASE_URL: http://localhost:9000/proposal-documents
+      DOCUMENT_STORAGE_ENDPOINT: minio:9000
+      DOCUMENT_STORAGE_PUBLIC_ENDPOINT: http://localhost:9000
+      DOCUMENT_STORAGE_ACCESS_KEY: credit_flow
+      DOCUMENT_STORAGE_SECRET_KEY: credit_flow
+      DOCUMENT_STORAGE_BUCKET: proposal-documents
+      DOCUMENT_STORAGE_USE_SSL: "false"
     depends_on:
       postgres:
         condition: service_healthy
@@ -105,9 +111,14 @@ services:
       NOTIFICATION_SERVICE_PORT: "8087"
       NOTIFICATION_SERVICE_DATABASE_URL: postgres://credit_flow:credit_flow@postgres:5432/credit_flow?sslmode=disable
       NOTIFICATION_SERVICE_ENCRYPTION_KEY: credit-flow-local-notification-key
+      NOTIFICATION_SMTP_HOST: mailpit
+      NOTIFICATION_SMTP_PORT: "1025"
+      NOTIFICATION_SMTP_FROM: credit-flow@local.test
     depends_on:
       postgres:
         condition: service_healthy
+      mailpit:
+        condition: service_started
 
   workflow:
     build:

@@ -28,13 +28,23 @@ func (r *DocumentRepository) EnsureSchema(ctx context.Context) error {
 		file_key TEXT NOT NULL UNIQUE,
 		status TEXT NOT NULL,
 		upload_url TEXT NOT NULL,
+		storage_url TEXT NOT NULL DEFAULT '',
 		uploaded_at TIMESTAMPTZ NULL,
 		created_at TIMESTAMPTZ NOT NULL,
 		updated_at TIMESTAMPTZ NOT NULL
 	);
 	`
 
-	_, err := r.db.ExecContext(ctx, query)
+	if _, err := r.db.ExecContext(ctx, query); err != nil {
+		return err
+	}
+
+	const alterQuery = `
+	ALTER TABLE documents
+		ADD COLUMN IF NOT EXISTS storage_url TEXT NOT NULL DEFAULT '';
+	`
+
+	_, err := r.db.ExecContext(ctx, alterQuery)
 	return err
 }
 
@@ -49,10 +59,11 @@ func (r *DocumentRepository) Create(ctx context.Context, document domain.Documen
 		file_key,
 		status,
 		upload_url,
+		storage_url,
 		uploaded_at,
 		created_at,
 		updated_at
-	) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11);
+	) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12);
 	`
 
 	_, err := r.db.ExecContext(
@@ -66,6 +77,7 @@ func (r *DocumentRepository) Create(ctx context.Context, document domain.Documen
 		document.FileKey,
 		document.Status,
 		document.UploadURL,
+		document.StorageURL,
 		document.UploadedAt,
 		document.CreatedAt,
 		document.UpdatedAt,
@@ -75,7 +87,7 @@ func (r *DocumentRepository) Create(ctx context.Context, document domain.Documen
 
 func (r *DocumentRepository) ListByProposalID(ctx context.Context, proposalID string) ([]domain.Document, error) {
 	const query = `
-	SELECT id, proposal_id, document_type, file_name, content_type, file_key, status, upload_url, uploaded_at, created_at, updated_at
+	SELECT id, proposal_id, document_type, file_name, content_type, file_key, status, upload_url, storage_url, uploaded_at, created_at, updated_at
 	FROM documents
 	WHERE proposal_id = $1
 	ORDER BY created_at ASC;
@@ -101,6 +113,7 @@ func (r *DocumentRepository) ListByProposalID(ctx context.Context, proposalID st
 			&document.FileKey,
 			&document.Status,
 			&document.UploadURL,
+			&document.StorageURL,
 			&uploadedAt,
 			&document.CreatedAt,
 			&document.UpdatedAt,
@@ -119,12 +132,50 @@ func (r *DocumentRepository) ListByProposalID(ctx context.Context, proposalID st
 	return documents, rows.Err()
 }
 
+func (r *DocumentRepository) GetByProposalIDAndDocumentID(ctx context.Context, proposalID, documentID string) (domain.Document, error) {
+	const query = `
+	SELECT id, proposal_id, document_type, file_name, content_type, file_key, status, upload_url, storage_url, uploaded_at, created_at, updated_at
+	FROM documents
+	WHERE proposal_id = $1 AND id = $2;
+	`
+
+	var document domain.Document
+	var uploadedAt sql.NullTime
+	err := r.db.QueryRowContext(ctx, query, proposalID, documentID).Scan(
+		&document.ID,
+		&document.ProposalID,
+		&document.Type,
+		&document.FileName,
+		&document.ContentType,
+		&document.FileKey,
+		&document.Status,
+		&document.UploadURL,
+		&document.StorageURL,
+		&uploadedAt,
+		&document.CreatedAt,
+		&document.UpdatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return domain.Document{}, domain.ErrDocumentNotFound
+		}
+		return domain.Document{}, err
+	}
+
+	if uploadedAt.Valid {
+		timestamp := uploadedAt.Time
+		document.UploadedAt = &timestamp
+	}
+
+	return document, nil
+}
+
 func (r *DocumentRepository) MarkUploaded(ctx context.Context, proposalID, documentID string, uploadedAt time.Time) (domain.Document, error) {
 	const query = `
 	UPDATE documents
 	SET status = $3, uploaded_at = $4, updated_at = $4
 	WHERE proposal_id = $1 AND id = $2
-	RETURNING id, proposal_id, document_type, file_name, content_type, file_key, status, upload_url, uploaded_at, created_at, updated_at;
+	RETURNING id, proposal_id, document_type, file_name, content_type, file_key, status, upload_url, storage_url, uploaded_at, created_at, updated_at;
 	`
 
 	var document domain.Document
@@ -138,6 +189,7 @@ func (r *DocumentRepository) MarkUploaded(ctx context.Context, proposalID, docum
 		&document.FileKey,
 		&document.Status,
 		&document.UploadURL,
+		&document.StorageURL,
 		&uploaded,
 		&document.CreatedAt,
 		&document.UpdatedAt,

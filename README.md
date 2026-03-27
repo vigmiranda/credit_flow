@@ -50,11 +50,11 @@ Entregar um slice vertical demonstravel do fluxo de proposta:
 
 - `services/proposal`: cria, consulta e atualiza status da proposta
 - `services/customer`: cadastra e consulta cliente por proposta
-- `services/document`: gera upload URL, lista documentos e confirma recebimento
+- `services/document`: registra documentos, grava arquivos no MinIO e lista documentos
 - `services/workflow`: orquestra as analises simuladas do MVP
 - `services/credit-analysis`: simulador de analise de credito
 - `services/fraud-analysis`: simulador de analise de fraude
-- `services/notification`: registra o historico de notificacoes simuladas
+- `services/notification`: registra o historico de notificacoes e envia e-mail por SMTP local
 - `services/bff`: agrega os servicos core para o front
 - `apps/web`: jornada inicial em Next.js consumindo o BFF
 
@@ -80,21 +80,15 @@ Pre-requisito:
 - `mailpit` UI em `http://localhost:8025`
 - `minio` API em `http://localhost:9000`
 - `minio` console em `http://localhost:9001`
-- `proposal` em `http://localhost:8081`
-- `customer` em `http://localhost:8082`
-- `document` em `http://localhost:8083`
-- `workflow` em `http://localhost:8084`
-- `credit-analysis` em `http://localhost:8085`
-- `fraud-analysis` em `http://localhost:8086`
-- `notification` em `http://localhost:8087`
 - `bff` em `http://localhost:18080`
 - `web` em `http://localhost:3000`
+- servicos internos acessiveis apenas pela rede Docker da stack
 
 ## Autenticacao inicial
 
 - `apps/web` agora protege `/` por cookie de sessao e redireciona para `/login`
 - `AUTH_MODE=mock` habilita login operacional local
-- `AUTH_MODE=oidc` preserva a configuracao-base para integracao futura com issuer real
+- `AUTH_MODE=oidc` habilita inicio de login via issuer configurado e callback local com validacao de `state`
 
 ## Validacao rapida
 
@@ -117,11 +111,6 @@ Pre-requisito:
 ## Enderecos padrao
 
 - Front web: `http://localhost:3000`
-- BFF: `http://localhost:8080`
-- Proposal Service: `http://localhost:8081`
-- Customer Service: `http://localhost:8082`
-- Document Service: `http://localhost:8083`
-- Workflow Service: `http://localhost:8084`
-- Credit Analysis Service: `http://localhost:8085`
-- Fraud Analysis Service: `http://localhost:8086`
-- Notification Service: `http://localhost:8087`
+- BFF: `http://localhost:18080`
+- Mailpit UI: `http://localhost:8025`
+- MinIO Console: `http://localhost:9001`

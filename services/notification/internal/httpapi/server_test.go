@@ -28,8 +28,16 @@ func (s *stubStore) ListByProposalID(_ context.Context, proposalID string) ([]do
 	return s.items[proposalID], nil
 }
 
+type stubSender struct {
+	err error
+}
+
+func (s stubSender) Send(notification domain.Notification) error {
+	return s.err
+}
+
 func TestCreateNotification(t *testing.T) {
-	srv := NewServer(newStubStore())
+	srv := NewServer(newStubStore(), stubSender{})
 	body := bytes.NewBufferString(`{"channel":"email","template":"proposal_status_changed","recipient":"maria@example.com","message":"Sua proposta foi aprovada.","trigger_status":"approved"}`)
 	req := httptest.NewRequest(http.MethodPost, "/internal/proposals/prop_123/notifications", body)
 	resp := httptest.NewRecorder()
@@ -46,5 +54,8 @@ func TestCreateNotification(t *testing.T) {
 	}
 	if notification.Recipient != "m****@example.com" {
 		t.Fatalf("expected masked recipient, got %s", notification.Recipient)
+	}
+	if notification.Status != domain.StatusSent {
+		t.Fatalf("expected sent status, got %s", notification.Status)
 	}
 }

@@ -333,16 +333,16 @@ Objetivo: garantir repetibilidade, confianca e evolucao continua.
 
 ### Ciclo atual
 
-- Identificador: ciclo-10
+- Identificador: ciclo-11
 - Status: aberto
-- Objetivo: aproximar o MVP de integracoes reais e operacao assistida
+- Objetivo: reduzir acoplamento do workflow e preparar integracoes externas reais
 - Itens priorizados:
-  - substituir simulacao de upload por fluxo S3-compatible com MinIO
-  - preparar entrega de notificacao via SMTP local
-  - estruturar callbacks reais de autenticacao OIDC
-  - evoluir workflow para fila ou coordenacao assincrona real
+  - evoluir o workflow para coordenacao por fila e retries
+  - adicionar callback OIDC com troca real de token
+  - preparar callbacks ou webhooks para storage e parceiros externos
+  - expandir smoke test para validar a stack docker ponta a ponta
 - Observacao:
-  - ciclo-9 fechou autenticacao inicial do front e stack local auxiliar para proximas integracoes
+  - ciclo-10 fechou upload real em storage local, notificacao SMTP local e callback OIDC inicial
 
 ## Entregas materializadas no ciclo-3
 
@@ -414,6 +414,17 @@ Objetivo: garantir repetibilidade, confianca e evolucao continua.
 - ampliacao do `docker-compose` com `redis`, `mailpit` e `minio`;
 - documentacao do ambiente local em `docs/ambiente_local.md`.
 
+## Entregas materializadas no ciclo-10
+
+- `document service` com upload real em MinIO e persistencia de `storage_url`;
+- `BFF` com endpoint multipart para envio do arquivo e disparo automatico do workflow;
+- front web atualizado para selecionar arquivo, registrar documento e enviar conteudo real;
+- `notification service` com entrega SMTP local via Mailpit e status `sent` ou `failed`;
+- callback inicial OIDC no front com inicio de login, validacao de `state` e criacao de sessao local;
+- `docker-compose` e `.env.example` atualizados para MinIO e SMTP locais;
+- contrato do BFF e documentacao do workflow e ambiente local atualizados;
+- validacao com `go test ./...`, `npm run typecheck`, `npm run build` e `scripts/verify.ps1`.
+
 ### Historico
 
 | Ciclo | Status | Resumo |
@@ -428,3 +439,4 @@ Objetivo: garantir repetibilidade, confianca e evolucao continua.
 | ciclo-7 | concluido | Observabilidade inicial, build de imagens e smoke test do MVP entregues |
 | ciclo-8 | concluido | Mascaramento de PII no BFF, secrets por arquivo, criptografia de destinatario em notificacoes e documentacao operacional entregues |
 | ciclo-9 | concluido | Autenticacao inicial mock OIDC-ready no front e ambiente local ampliado com Redis, Mailpit e MinIO |
+| ciclo-10 | concluido | Upload real via MinIO, notificacoes SMTP locais via Mailpit e callback OIDC inicial no front |

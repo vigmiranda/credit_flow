@@ -1,9 +1,11 @@
 package httpapi
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -16,12 +18,18 @@ const headerCorrelationID = "X-Correlation-Id"
 type DocumentStore interface {
 	Create(ctx context.Context, document domain.Document) error
 	ListByProposalID(ctx context.Context, proposalID string) ([]domain.Document, error)
+	GetByProposalIDAndDocumentID(ctx context.Context, proposalID, documentID string) (domain.Document, error)
 	MarkUploaded(ctx context.Context, proposalID, documentID string, uploadedAt time.Time) (domain.Document, error)
+}
+
+type ObjectStorage interface {
+	Upload(ctx context.Context, fileKey, contentType string, body io.Reader, size int64) error
 }
 
 type server struct {
 	store         DocumentStore
 	uploadBaseURL string
+	storage       ObjectStorage
 }
 
 type uploadRequest struct {
@@ -37,8 +45,8 @@ type errorResponse struct {
 	Details       map[string]any `json:"details,omitempty"`
 }
 
-func NewServer(store DocumentStore, uploadBaseURL string) http.Handler {
-	return &server{store: store, uploadBaseURL: uploadBaseURL}
+func NewServer(store DocumentStore, uploadBaseURL string, storage ObjectStorage) http.Handler {
+	return &server{store: store, uploadBaseURL: uploadBaseURL, storage: storage}
 }
 
 func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -82,6 +90,11 @@ func (s *server) handleProposalRoutes(w http.ResponseWriter, r *http.Request, co
 		return
 	}
 
+	if len(segments) == 4 && segments[3] == "content" && r.Method == http.MethodPost {
+		s.uploadDocumentContent(w, r, correlationID, proposalID, segments[2])
+		return
+	}
+
 	if len(segments) == 3 && segments[2] == "analyze" && r.Method == http.MethodPost {
 		s.analyzeDocuments(w, r, correlationID, proposalID)
 		return
@@ -114,6 +127,61 @@ func (s *server) createUploadURL(w http.ResponseWriter, r *http.Request, correla
 	}
 
 	writeJSON(w, http.StatusOK, document)
+}
+
+func (s *server) uploadDocumentContent(w http.ResponseWriter, r *http.Request, correlationID, proposalID, documentID string) {
+	if err := r.ParseMultipartForm(16 << 20); err != nil {
+		writeError(w, http.StatusBadRequest, correlationID, "invalid_request", "arquivo invalido", nil)
+		return
+	}
+
+	file, _, err := r.FormFile("file")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, correlationID, "invalid_request", "arquivo obrigatorio", map[string]any{
+			"required_fields": []string{"file"},
+		})
+		return
+	}
+	defer file.Close()
+
+	document, err := s.store.GetByProposalIDAndDocumentID(r.Context(), proposalID, documentID)
+	if err != nil {
+		if errors.Is(err, domain.ErrDocumentNotFound) {
+			writeError(w, http.StatusNotFound, correlationID, "not_found", "documento nao encontrado", nil)
+			return
+		}
+		writeError(w, http.StatusInternalServerError, correlationID, "internal_error", "falha ao carregar documento", nil)
+		return
+	}
+
+	content, err := io.ReadAll(file)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, correlationID, "internal_error", "falha ao ler arquivo", nil)
+		return
+	}
+
+	contentType := document.ContentType
+	if files := r.MultipartForm.File["file"]; len(files) > 0 {
+		if headerValue := strings.TrimSpace(files[0].Header.Get("Content-Type")); headerValue != "" {
+			contentType = headerValue
+		}
+	}
+	if headerValue := strings.TrimSpace(r.Header.Get("X-Upload-Content-Type")); headerValue != "" {
+		contentType = headerValue
+	}
+
+	if err := s.storage.Upload(r.Context(), document.FileKey, contentType, bytes.NewReader(content), int64(len(content))); err != nil {
+		writeError(w, http.StatusInternalServerError, correlationID, "internal_error", "falha ao enviar arquivo para storage", nil)
+		return
+	}
+
+	updated, err := s.store.MarkUploaded(r.Context(), proposalID, documentID, time.Now().UTC())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, correlationID, "internal_error", "falha ao atualizar documento", nil)
+		return
+	}
+
+	writeJSON(w, http.StatusAccepted, updated)
 }
 
 func (s *server) listDocuments(w http.ResponseWriter, r *http.Request, correlationID, proposalID string) {

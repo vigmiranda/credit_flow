@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -45,8 +46,9 @@ func (s stubCustomerGateway) Get(ctx context.Context, path, correlationID string
 }
 
 type stubDocumentGateway struct {
-	postFunc func(ctx context.Context, path, correlationID string, payload any, out any) (int, error)
-	getFunc  func(ctx context.Context, path, correlationID string, out any) (int, error)
+	postFunc   func(ctx context.Context, path, correlationID string, payload any, out any) (int, error)
+	getFunc    func(ctx context.Context, path, correlationID string, out any) (int, error)
+	uploadFunc func(ctx context.Context, path, correlationID, fieldName, fileName, contentType string, content []byte, out any) (int, error)
 }
 
 func (s stubDocumentGateway) Post(ctx context.Context, path, correlationID string, payload any, out any) (int, error) {
@@ -55,6 +57,10 @@ func (s stubDocumentGateway) Post(ctx context.Context, path, correlationID strin
 
 func (s stubDocumentGateway) Get(ctx context.Context, path, correlationID string, out any) (int, error) {
 	return s.getFunc(ctx, path, correlationID, out)
+}
+
+func (s stubDocumentGateway) UploadMultipart(ctx context.Context, path, correlationID, fieldName, fileName, contentType string, content []byte, out any) (int, error) {
+	return s.uploadFunc(ctx, path, correlationID, fieldName, fileName, contentType, content, out)
 }
 
 type stubWorkflowGateway struct {
@@ -154,6 +160,9 @@ func TestGetProposalAggregatesCustomerAndDocuments(t *testing.T) {
 				return http.StatusOK, nil
 			},
 			postFunc: func(context.Context, string, string, any, any) (int, error) { return 0, errors.New("unexpected") },
+			uploadFunc: func(context.Context, string, string, string, string, string, []byte, any) (int, error) {
+				return 0, errors.New("unexpected")
+			},
 		},
 		stubWorkflowGateway{
 			postFunc: func(context.Context, string, string, any, any) (int, error) { return 0, errors.New("unexpected") },
@@ -258,6 +267,9 @@ func TestUpsertCustomerUpdatesProposalStatus(t *testing.T) {
 		stubDocumentGateway{
 			postFunc: func(context.Context, string, string, any, any) (int, error) { return 0, errors.New("unexpected") },
 			getFunc:  func(context.Context, string, string, any) (int, error) { return 0, errors.New("unexpected") },
+			uploadFunc: func(context.Context, string, string, string, string, string, []byte, any) (int, error) {
+				return 0, errors.New("unexpected")
+			},
 		},
 		stubWorkflowGateway{
 			postFunc: func(context.Context, string, string, any, any) (int, error) { return 0, errors.New("unexpected") },
@@ -330,6 +342,9 @@ func TestMarkDocumentReceivedTriggersWorkflow(t *testing.T) {
 				return http.StatusAccepted, nil
 			},
 			getFunc: func(context.Context, string, string, any) (int, error) { return 0, errors.New("unexpected") },
+			uploadFunc: func(context.Context, string, string, string, string, string, []byte, any) (int, error) {
+				return 0, errors.New("unexpected")
+			},
 		},
 		stubWorkflowGateway{
 			postFunc: func(_ context.Context, path, _ string, payload any, out any) (int, error) {
@@ -367,5 +382,102 @@ func TestMarkDocumentReceivedTriggersWorkflow(t *testing.T) {
 	}
 	if !notificationCalled {
 		t.Fatal("expected notification after document confirmation")
+	}
+}
+
+func TestUploadDocumentContentTriggersWorkflow(t *testing.T) {
+	workflowTriggered := make(chan struct{}, 1)
+	notificationCalled := false
+	srv := NewServer(
+		stubProposalGateway{
+			postFunc: func(context.Context, string, string, any, any) (int, error) { return 0, errors.New("unexpected") },
+			getFunc:  func(context.Context, string, string, any) (int, error) { return 0, errors.New("unexpected") },
+			patchFunc: func(_ context.Context, path, _ string, payload any, out any) (int, error) {
+				if path != "/internal/proposals/prop_123/status" {
+					t.Fatalf("unexpected patch path %s", path)
+				}
+				return http.StatusOK, nil
+			},
+		},
+		stubCustomerGateway{
+			postFunc: func(context.Context, string, string, any, any) (int, error) { return 0, errors.New("unexpected") },
+			getFunc: func(_ context.Context, path, _ string, out any) (int, error) {
+				if path != "/internal/proposals/prop_123/customer" {
+					t.Fatalf("unexpected customer lookup path %s", path)
+				}
+				customer := out.(*backend.Customer)
+				customer.Email = "maria@example.com"
+				return http.StatusOK, nil
+			},
+		},
+		stubDocumentGateway{
+			postFunc: func(context.Context, string, string, any, any) (int, error) { return 0, errors.New("unexpected") },
+			getFunc:  func(context.Context, string, string, any) (int, error) { return 0, errors.New("unexpected") },
+			uploadFunc: func(_ context.Context, path, _ string, fieldName, fileName, contentType string, content []byte, out any) (int, error) {
+				if path != "/internal/proposals/prop_123/documents/doc_123/content" {
+					t.Fatalf("unexpected upload path %s", path)
+				}
+				if fieldName != "file" || fileName != "rg.jpg" || len(content) == 0 {
+					t.Fatal("unexpected upload metadata")
+				}
+				if contentType != "" && contentType != "application/octet-stream" {
+					t.Fatalf("unexpected content type %s", contentType)
+				}
+				document := out.(*backend.Document)
+				document.DocumentID = "doc_123"
+				document.Status = "uploaded"
+				return http.StatusAccepted, nil
+			},
+		},
+		stubWorkflowGateway{
+			postFunc: func(_ context.Context, path, _ string, payload any, out any) (int, error) {
+				if path != "/internal/proposals/prop_123/run-analyses" {
+					t.Fatalf("unexpected workflow path %s", path)
+				}
+				workflowTriggered <- struct{}{}
+				return http.StatusAccepted, nil
+			},
+		},
+		stubNotificationGateway{
+			postFunc: func(_ context.Context, path, _ string, payload any, out any) (int, error) {
+				notificationCalled = true
+				if path != "/internal/proposals/prop_123/notifications" {
+					t.Fatalf("unexpected notification path %s", path)
+				}
+				return http.StatusAccepted, nil
+			},
+			getFunc: func(context.Context, string, string, any) (int, error) { return 0, errors.New("unexpected") },
+		},
+	)
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	part, err := writer.CreateFormFile("file", "rg.jpg")
+	if err != nil {
+		t.Fatalf("create form file: %v", err)
+	}
+	if _, err := part.Write([]byte("fake-image-content")); err != nil {
+		t.Fatalf("write form content: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close writer: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/proposals/prop_123/documents/doc_123/content", body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	resp := httptest.NewRecorder()
+	srv.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusAccepted {
+		t.Fatalf("expected status %d, got %d", http.StatusAccepted, resp.Code)
+	}
+
+	select {
+	case <-workflowTriggered:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("expected workflow trigger after content upload")
+	}
+	if !notificationCalled {
+		t.Fatal("expected notification after document upload")
 	}
 }

@@ -8,6 +8,7 @@ import (
 
 const (
 	ChannelEmail = "email"
+	StatusFailed = "failed"
 	StatusSent   = "sent"
 )
 
@@ -37,6 +38,12 @@ func NewNotification(proposalID, channel, template, recipient, message, triggerS
 		SentAt:        now.UTC(),
 		CreatedAt:     now.UTC(),
 	}
+}
+
+func (n Notification) MarkFailed(now time.Time) Notification {
+	n.Status = StatusFailed
+	n.SentAt = now.UTC()
+	return n
 }
 
 func randomNotificationToken(size int) string {

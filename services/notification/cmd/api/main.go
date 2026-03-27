@@ -17,6 +17,7 @@ import (
 	"creditflow/services/notification/internal/observability"
 	"creditflow/services/notification/internal/repository/postgres"
 	"creditflow/services/notification/internal/security"
+	smtpsender "creditflow/services/notification/internal/sender/smtp"
 )
 
 func main() {
@@ -44,11 +45,18 @@ func main() {
 	if err := repo.EnsureSchema(ctx); err != nil {
 		log.Fatalf("ensure schema: %v", err)
 	}
+	sender := smtpsender.New(smtpsender.Config{
+		Host:     cfg.SMTPHost,
+		Port:     cfg.SMTPPort,
+		Username: cfg.SMTPUsername,
+		Password: cfg.SMTPPassword,
+		From:     cfg.SMTPFrom,
+	})
 
 	metrics := observability.NewMetrics("notification")
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", metrics.Handler())
-	mux.Handle("/", metrics.Wrap(httpapi.NewServer(repo)))
+	mux.Handle("/", metrics.Wrap(httpapi.NewServer(repo, sender)))
 
 	server := &http.Server{
 		Addr:              ":" + cfg.Port,

@@ -3,9 +3,9 @@
 ## Stack local atual
 
 - `postgres`: persistencia principal do MVP
-- `redis`: cache e futura coordenacao assíncrona
-- `mailpit`: caixa SMTP local para evolucao das notificacoes
-- `minio`: storage S3-compatible para evolucao do fluxo documental
+- `redis`: cache e futura coordenacao assincrona
+- `mailpit`: caixa SMTP local para notificacoes
+- `minio`: storage S3-compatible para upload real do fluxo documental
 
 ## Subida rapida
 
@@ -29,18 +29,13 @@ docker compose -f infra/docker/docker-compose.yml up -d --build
 - Mailpit UI: `http://localhost:8025`
 - MinIO API: `http://localhost:9000`
 - MinIO Console: `http://localhost:9001`
-- Proposal Service: `http://localhost:8081`
-- Customer Service: `http://localhost:8082`
-- Document Service: `http://localhost:8083`
-- Workflow Service: `http://localhost:8084`
-- Credit Analysis Service: `http://localhost:8085`
-- Fraud Analysis Service: `http://localhost:8086`
-- Notification Service: `http://localhost:8087`
 - BFF: `http://localhost:18080`
 - Web: `http://localhost:3000`
 
 ## Observacoes
 
-- o `docker-compose` agora sobe toda a stack local do MVP, incluindo front e servicos Go;
-- `Redis`, `Mailpit` e `MinIO` ainda entram como componentes auxiliares para os proximos ciclos;
+- o `docker-compose` sobe toda a stack local do MVP, incluindo front e servicos Go;
+- os servicos internos Go ficam acessiveis pela rede Docker e expostos ao host apenas via `web` e `bff`;
+- o upload documental usa o bucket `proposal-documents` no MinIO;
+- as notificacoes do `notification service` sao entregues por SMTP local no Mailpit;
 - o smoke test segue isolado do stack principal para evitar conflito de portas e dados.
