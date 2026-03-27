@@ -14,6 +14,16 @@ $smokePorts = @{
 }
 $smokeDbUrl = "postgres://credit_flow:credit_flow@localhost:$smokeDbPort/credit_flow?sslmode=disable"
 $smokeDbContainer = "credit-flow-smoke-postgres"
+$servicePorts = @(
+  $smokePorts.bff,
+  $smokePorts.proposal,
+  $smokePorts.customer,
+  $smokePorts.document,
+  $smokePorts.workflow,
+  $smokePorts."credit-analysis",
+  $smokePorts."fraud-analysis",
+  $smokePorts.notification
+)
 $services = @(
   @{ Name = "proposal"; Path = Join-Path $root "services/proposal"; Port = $smokePorts.proposal; Env = @{ PROPOSAL_SERVICE_PORT = "$($smokePorts.proposal)"; PROPOSAL_SERVICE_DATABASE_URL = $smokeDbUrl } },
   @{ Name = "customer"; Path = Join-Path $root "services/customer"; Port = $smokePorts.customer; Env = @{ CUSTOMER_SERVICE_PORT = "$($smokePorts.customer)"; CUSTOMER_SERVICE_DATABASE_URL = $smokeDbUrl } },
@@ -89,11 +99,38 @@ function Wait-ForPostgres {
   throw "PostgreSQL nao ficou pronto no tempo esperado"
 }
 
+function Stop-ProcessesOnPorts {
+  param(
+    [int[]]$Ports
+  )
+
+  $connections = Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue |
+    Where-Object { $Ports -contains $_.LocalPort } |
+    Select-Object -ExpandProperty OwningProcess -Unique
+
+  foreach ($processId in $connections) {
+    if ($processId -and $processId -ne 0 -and $processId -ne $PID) {
+      try {
+        Stop-Process -Id $processId -Force -ErrorAction Stop
+      }
+      catch {
+      }
+    }
+  }
+}
+
 try {
+  Stop-ProcessesOnPorts -Ports $servicePorts
   Write-Host "==> Subindo PostgreSQL dedicado do smoke test em localhost:$smokeDbPort"
   docker rm -f $smokeDbContainer | Out-Null 2>$null
   docker run -d --name $smokeDbContainer -e POSTGRES_DB=credit_flow -e POSTGRES_USER=credit_flow -e POSTGRES_PASSWORD=credit_flow -p "${smokeDbPort}:5432" postgres:16-alpine | Out-Null
   Wait-ForPostgres -ContainerName $smokeDbContainer
+  for ($i = 0; $i -lt 40; $i++) {
+    if (Test-TcpPort -HostName "localhost" -Port $smokeDbPort) {
+      break
+    }
+    Start-Sleep -Milliseconds 250
+  }
 
   foreach ($service in $services) {
     Write-Host "==> Iniciando $($service.Name)"
@@ -188,5 +225,6 @@ finally {
     catch {
     }
   }
+  Stop-ProcessesOnPorts -Ports $servicePorts
   docker rm -f $smokeDbContainer | Out-Null 2>$null
 }

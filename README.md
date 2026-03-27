@@ -40,6 +40,7 @@ Entregar um slice vertical demonstravel do fluxo de proposta:
 - `planning/backlog_implementacao.md`: backlog vivo do projeto
 - `docs/padroes_desenvolvimento.md`: convencoes de engenharia
 - `docs/workflow_inicial.md`: fluxo do MVP para analises simuladas
+- `docs/ambiente_local.md`: stack local e componentes auxiliares
 - `docs/seguranca_operacional.md`: mascaramento, secrets via arquivo e criptografia
 - `docs/alarmes_dashboards.md`: monitoracao minima para operacao
 - `docs/estrategia_deploy.md`: fluxo recomendado de entrega por imagens
@@ -73,6 +74,20 @@ Entregar um slice vertical demonstravel do fluxo de proposta:
 3. Subir o front:
    `npm install`
    `npm run dev` em `apps/web`
+
+## Ambiente local auxiliar
+
+- `postgres` em `localhost:5432`
+- `redis` em `localhost:6379`
+- `mailpit` UI em `http://localhost:8025`
+- `minio` API em `http://localhost:9000`
+- `minio` console em `http://localhost:9001`
+
+## Autenticacao inicial
+
+- `apps/web` agora protege `/` por cookie de sessao e redireciona para `/login`
+- `AUTH_MODE=mock` habilita login operacional local
+- `AUTH_MODE=oidc` preserva a configuracao-base para integracao futura com issuer real
 
 ## Validacao rapida
 

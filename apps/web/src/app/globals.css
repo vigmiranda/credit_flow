@@ -48,6 +48,72 @@ select {
   padding: 28px 0 36px;
 }
 
+.auth-shell {
+  width: min(1040px, calc(100% - 32px));
+  min-height: 100vh;
+  margin: 0 auto;
+  padding: 32px 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(320px, 0.9fr);
+  gap: 18px;
+  align-items: center;
+}
+
+.auth-panel,
+.session-banner {
+  border: 1px solid var(--line);
+  background: var(--surface);
+  backdrop-filter: blur(18px);
+  box-shadow: var(--shadow);
+}
+
+.auth-panel {
+  border-radius: var(--radius);
+  padding: 28px;
+}
+
+.auth-panel-copy h1 {
+  margin: 0;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(2rem, 4vw, 4rem);
+  line-height: 0.98;
+  letter-spacing: -0.05em;
+}
+
+.auth-hints {
+  margin-top: 24px;
+  display: grid;
+  gap: 12px;
+}
+
+.auth-hints div,
+.session-banner {
+  padding: 14px 16px;
+  border-radius: 18px;
+  background: var(--surface-strong);
+}
+
+.auth-hints span,
+.session-banner span {
+  display: block;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.auth-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: flex-start;
+}
+
+.session-banner {
+  margin-bottom: 18px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+}
+
 .hero {
   display: grid;
   grid-template-columns: minmax(0, 1.8fr) minmax(280px, 0.9fr);
@@ -417,6 +483,7 @@ select:focus {
 }
 
 @media (max-width: 920px) {
+  .auth-shell,
   .hero,
   .grid,
   .timeline,
@@ -424,6 +491,7 @@ select:focus {
     grid-template-columns: 1fr;
   }
 
+  .session-banner,
   .footer-bar,
   .collection-item,
   .timeline-row {

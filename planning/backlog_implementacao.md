@@ -31,7 +31,7 @@ Objetivo: preparar a base tecnica e organizacional para iniciar o desenvolviment
 | E1-01 | Definir escopo fechado do MVP | concluido | Nenhuma | Lista objetiva do que entra e do que fica fora da primeira entrega |
 | E1-02 | Definir estrutura inicial do repositorio | concluido | E1-01 | Organizacao base de `apps`, `services`, `infra` e `docs/planning` |
 | E1-03 | Definir padroes de desenvolvimento | concluido | E1-02 | Convencoes de codigo, branch, commit, env e observabilidade minima |
-| E1-04 | Preparar ambiente local minimo | pendente | E1-02 | Stack local com banco, cache e servicos auxiliares |
+| E1-04 | Preparar ambiente local minimo | concluido | E1-02 | Stack local com banco, cache e servicos auxiliares |
 
 ### Epico 2 - Contratos e dominio
 
@@ -211,7 +211,7 @@ Objetivo: habilitar a jornada principal do usuario no MVP.
 | ID | Item | Status | Dependencias | Saida esperada |
 | --- | --- | --- | --- | --- |
 | E3-01 | Criar aplicacao web base | concluido | E1-02 | App Next.js com estrutura inicial |
-| E3-02 | Implementar autenticacao inicial | pendente | E3-01 | Fluxo mockado ou OIDC-ready para evolucao |
+| E3-02 | Implementar autenticacao inicial | concluido | E3-01 | Fluxo mockado ou OIDC-ready para evolucao |
 | E3-03 | Criar jornada de abertura de proposta | concluido | E3-01, E2-03 | Tela e fluxo para iniciar proposta |
 | E3-04 | Criar jornada de cadastro do cliente | concluido | E3-03, E2-03 | Formularios com validacao |
 | E3-05 | Criar jornada de upload de documentos | concluido | E3-03, E2-03 | Upload via URL assinada |
@@ -333,16 +333,16 @@ Objetivo: garantir repetibilidade, confianca e evolucao continua.
 
 ### Ciclo atual
 
-- Identificador: ciclo-9
+- Identificador: ciclo-10
 - Status: aberto
-- Objetivo: ampliar confiabilidade operacional e autenticacao inicial
+- Objetivo: aproximar o MVP de integracoes reais e operacao assistida
 - Itens priorizados:
-  - E1-04 Preparar ambiente local minimo
-  - E3-02 Implementar autenticacao inicial
-  - consolidar cache e componentes auxiliares do ambiente local
-  - preparar rollout de autenticacao mock para OIDC-ready
+  - substituir simulacao de upload por fluxo S3-compatible com MinIO
+  - preparar entrega de notificacao via SMTP local
+  - estruturar callbacks reais de autenticacao OIDC
+  - evoluir workflow para fila ou coordenacao assincrona real
 - Observacao:
-  - ciclo-8 fechou seguranca minima, secrets por arquivo, alarmes basicos e estrategia de deploy
+  - ciclo-9 fechou autenticacao inicial do front e stack local auxiliar para proximas integracoes
 
 ## Entregas materializadas no ciclo-3
 
@@ -406,6 +406,14 @@ Objetivo: garantir repetibilidade, confianca e evolucao continua.
 - atualizacao do contrato do BFF para refletir mascaramento de campos sensiveis;
 - smoke test ajustado para exercitar a chave de criptografia da notificacao.
 
+## Entregas materializadas no ciclo-9
+
+- autenticacao mock OIDC-ready no `apps/web` com rota protegida, login, logout e sessao em cookie;
+- pagina `/login` com configuracao-base para futura troca para issuer OIDC real;
+- separacao da jornada principal em componente autenticado no front;
+- ampliacao do `docker-compose` com `redis`, `mailpit` e `minio`;
+- documentacao do ambiente local em `docs/ambiente_local.md`.
+
 ### Historico
 
 | Ciclo | Status | Resumo |
@@ -419,3 +427,4 @@ Objetivo: garantir repetibilidade, confianca e evolucao continua.
 | ciclo-6 | concluido | Notification Service, historico da proposta, timeline no front e validacao automatizada basica entregues |
 | ciclo-7 | concluido | Observabilidade inicial, build de imagens e smoke test do MVP entregues |
 | ciclo-8 | concluido | Mascaramento de PII no BFF, secrets por arquivo, criptografia de destinatario em notificacoes e documentacao operacional entregues |
+| ciclo-9 | concluido | Autenticacao inicial mock OIDC-ready no front e ambiente local ampliado com Redis, Mailpit e MinIO |
