@@ -35,7 +35,7 @@ services:
       - "8025:8025"
 
   minio:
-    image: minio/minio:RELEASE.2026-01-03T00-00-00Z
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z-cpuv1
     container_name: credit-flow-minio
     command: server /data --console-address ":9001"
     environment:
