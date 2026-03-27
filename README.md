@@ -74,7 +74,14 @@ Entregar um slice vertical demonstravel do fluxo de proposta:
 ## Validacao rapida
 
 - local: `powershell -ExecutionPolicy Bypass -File .\scripts\verify.ps1`
+- smoke do MVP: `powershell -ExecutionPolicy Bypass -File .\scripts\smoke_mvp.ps1`
 - CI: `.github/workflows/validate.yml`
+- build de imagens: `.github/workflows/build-images.yml`
+
+## Observabilidade inicial
+
+- `GET /metrics` disponivel em `bff`, `proposal`, `workflow` e `notification`
+- logs estruturados em JSON com `correlation_id`, `path`, `status_code` e `duration_ms`
 
 ## Enderecos padrao
 

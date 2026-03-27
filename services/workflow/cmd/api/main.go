@@ -12,22 +12,28 @@ import (
 	"creditflow/services/workflow/internal/backend"
 	"creditflow/services/workflow/internal/config"
 	"creditflow/services/workflow/internal/httpapi"
+	"creditflow/services/workflow/internal/observability"
 )
 
 func main() {
 	cfg := config.Load()
+	metrics := observability.NewMetrics("workflow")
+	apiHandler := metrics.Wrap(httpapi.NewServer(
+		backend.NewClient(cfg.ProposalServiceURL),
+		backend.NewClient(cfg.CustomerServiceURL),
+		backend.NewClient(cfg.DocumentServiceURL),
+		backend.NewClient(cfg.CreditAnalysisServiceURL),
+		backend.NewClient(cfg.FraudAnalysisServiceURL),
+		backend.NewClient(cfg.NotificationServiceURL),
+		cfg.AnalysisDelay,
+	))
+	mux := http.NewServeMux()
+	mux.Handle("/metrics", metrics.Handler())
+	mux.Handle("/", apiHandler)
 
 	server := &http.Server{
-		Addr: ":" + cfg.Port,
-		Handler: httpapi.NewServer(
-			backend.NewClient(cfg.ProposalServiceURL),
-			backend.NewClient(cfg.CustomerServiceURL),
-			backend.NewClient(cfg.DocumentServiceURL),
-			backend.NewClient(cfg.CreditAnalysisServiceURL),
-			backend.NewClient(cfg.FraudAnalysisServiceURL),
-			backend.NewClient(cfg.NotificationServiceURL),
-			cfg.AnalysisDelay,
-		),
+		Addr:              ":" + cfg.Port,
+		Handler:           mux,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 

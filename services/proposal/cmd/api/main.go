@@ -14,6 +14,7 @@ import (
 
 	"creditflow/services/proposal/internal/config"
 	"creditflow/services/proposal/internal/httpapi"
+	"creditflow/services/proposal/internal/observability"
 	"creditflow/services/proposal/internal/repository/postgres"
 )
 
@@ -38,9 +39,14 @@ func main() {
 		log.Fatalf("ensure schema: %v", err)
 	}
 
+	metrics := observability.NewMetrics("proposal")
+	mux := http.NewServeMux()
+	mux.Handle("/metrics", metrics.Handler())
+	mux.Handle("/", metrics.Wrap(httpapi.NewServer(repo)))
+
 	server := &http.Server{
 		Addr:              ":" + cfg.Port,
-		Handler:           httpapi.NewServer(repo),
+		Handler:           mux,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 

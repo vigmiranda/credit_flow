@@ -257,8 +257,8 @@ Objetivo: endurecer a solucao para operacao real.
 
 | ID | Item | Status | Dependencias | Saida esperada |
 | --- | --- | --- | --- | --- |
-| E7-01 | Adicionar logs estruturados | pendente | E4-01, E4-02 | Logs consistentes com correlation-id |
-| E7-02 | Adicionar metricas e tracing | pendente | E7-01 | Visibilidade ponta a ponta |
+| E7-01 | Adicionar logs estruturados | concluido | E4-01, E4-02 | Logs consistentes com correlation-id |
+| E7-02 | Adicionar metricas e tracing | concluido | E7-01 | Visibilidade ponta a ponta |
 | E7-03 | Implementar mascaramento de dados sensiveis | pendente | E2-05 | Protecao de logs e payloads |
 | E7-04 | Configurar secrets e criptografia | pendente | E1-04 | Segregacao segura de credenciais e chaves |
 | E7-05 | Definir alarmes e dashboards minimos | pendente | E7-02 | Monitoracao operacional basica |
@@ -270,9 +270,9 @@ Objetivo: garantir repetibilidade, confianca e evolucao continua.
 | ID | Item | Status | Dependencias | Saida esperada |
 | --- | --- | --- | --- | --- |
 | E8-01 | Configurar lint e testes automatizados | concluido | E1-03 | Validacao automatica no repositorio |
-| E8-02 | Configurar pipeline CI/CD inicial | pendente | E8-01 | Build, testes e empacotamento automatizados |
+| E8-02 | Configurar pipeline CI/CD inicial | concluido | E8-01 | Build, testes e empacotamento automatizados |
 | E8-03 | Definir estrategia de deploy | pendente | E8-02 | Fluxo de entrega em dev e homologacao |
-| E8-04 | Executar smoke tests do MVP | pendente | E3-06, E6-03, E8-02 | Validacao minima ponta a ponta |
+| E8-04 | Executar smoke tests do MVP | concluido | E3-06, E6-03, E8-02 | Validacao minima ponta a ponta |
 
 ## Ordem recomendada de execucao
 
@@ -333,16 +333,16 @@ Objetivo: garantir repetibilidade, confianca e evolucao continua.
 
 ### Ciclo atual
 
-- Identificador: ciclo-7
+- Identificador: ciclo-8
 - Status: aberto
-- Objetivo: iniciar observabilidade e pipeline do repositorio
+- Objetivo: endurecer seguranca operacional e preparar deploy
 - Itens priorizados:
-  - E7-01 Adicionar logs estruturados
-  - E7-02 Adicionar metricas e tracing
-  - E8-02 Configurar pipeline CI/CD inicial
-  - E8-04 Executar smoke tests do MVP
+  - E7-03 Implementar mascaramento de dados sensiveis
+  - E7-04 Configurar secrets e criptografia
+  - E7-05 Definir alarmes e dashboards minimos
+  - E8-03 Definir estrategia de deploy
 - Observacao:
-  - notificacoes, timeline e validacao automatizada basica ja foram entregues no ciclo anterior
+  - logs, metricas, pipeline e smoke test do MVP ja foram entregues no ciclo anterior
 
 ## Entregas materializadas no ciclo-3
 
@@ -388,6 +388,15 @@ Objetivo: garantir repetibilidade, confianca e evolucao continua.
 - validacao automatizada basica com `scripts/verify.ps1`;
 - workflow GitHub Actions em `.github/workflows/validate.yml`.
 
+## Entregas materializadas no ciclo-7
+
+- logs estruturados em JSON nos servicos centrais;
+- endpoint `/metrics` em `bff`, `proposal`, `workflow` e `notification`;
+- `Dockerfile` para servicos e front;
+- pipeline de build de imagens em `.github/workflows/build-images.yml`;
+- smoke test automatizado do MVP em `scripts/smoke_mvp.ps1`;
+- execucao bem-sucedida do smoke test local contra o fluxo fim a fim.
+
 ### Historico
 
 | Ciclo | Status | Resumo |
@@ -399,3 +408,4 @@ Objetivo: garantir repetibilidade, confianca e evolucao continua.
 | ciclo-4 | concluido | BFF integrado ao backend core e front web base entregue com a jornada principal do MVP |
 | ciclo-5 | concluido | Workflow inicial entregue com analises simuladas, persistencia dos resultados e consolidacao automatica da proposta |
 | ciclo-6 | concluido | Notification Service, historico da proposta, timeline no front e validacao automatizada basica entregues |
+| ciclo-7 | concluido | Observabilidade inicial, build de imagens e smoke test do MVP entregues |

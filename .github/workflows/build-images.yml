@@ -1,0 +1,28 @@
+name: Build Images
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  docker-build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - services/proposal
+          - services/customer
+          - services/document
+          - services/credit-analysis
+          - services/fraud-analysis
+          - services/notification
+          - services/workflow
+          - services/bff
+          - apps/web
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build ${{ matrix.target }}
+        run: docker build -t credit-flow/${{ matrix.target }} ${{ matrix.target }}
+

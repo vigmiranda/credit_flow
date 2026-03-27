@@ -14,6 +14,7 @@ import (
 
 	"creditflow/services/notification/internal/config"
 	"creditflow/services/notification/internal/httpapi"
+	"creditflow/services/notification/internal/observability"
 	"creditflow/services/notification/internal/repository/postgres"
 )
 
@@ -38,9 +39,14 @@ func main() {
 		log.Fatalf("ensure schema: %v", err)
 	}
 
+	metrics := observability.NewMetrics("notification")
+	mux := http.NewServeMux()
+	mux.Handle("/metrics", metrics.Handler())
+	mux.Handle("/", metrics.Wrap(httpapi.NewServer(repo)))
+
 	server := &http.Server{
 		Addr:              ":" + cfg.Port,
-		Handler:           httpapi.NewServer(repo),
+		Handler:           mux,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
