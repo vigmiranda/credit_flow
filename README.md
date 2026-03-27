@@ -87,7 +87,7 @@ Pre-requisito:
 - `credit-analysis` em `http://localhost:8085`
 - `fraud-analysis` em `http://localhost:8086`
 - `notification` em `http://localhost:8087`
-- `bff` em `http://localhost:8080`
+- `bff` em `http://localhost:18080`
 - `web` em `http://localhost:3000`
 
 ## Autenticacao inicial

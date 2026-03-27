@@ -36,7 +36,7 @@ docker compose -f infra/docker/docker-compose.yml up -d --build
 - Credit Analysis Service: `http://localhost:8085`
 - Fraud Analysis Service: `http://localhost:8086`
 - Notification Service: `http://localhost:8087`
-- BFF: `http://localhost:8080`
+- BFF: `http://localhost:18080`
 - Web: `http://localhost:3000`
 
 ## Observacoes
