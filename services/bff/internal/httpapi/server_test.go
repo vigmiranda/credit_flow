@@ -131,7 +131,9 @@ func TestGetProposalAggregatesCustomerAndDocuments(t *testing.T) {
 					CustomerID: "cus_123",
 					ProposalID: "prop_123",
 					FullName:   "Maria Silva",
+					CPF:        "12345678901",
 					Email:      "maria@example.com",
+					Phone:      "11999999999",
 				}
 				return http.StatusOK, nil
 			},
@@ -165,7 +167,12 @@ func TestGetProposalAggregatesCustomerAndDocuments(t *testing.T) {
 				*notifications = backend.NotificationList{
 					ProposalID: "prop_123",
 					Notifications: []backend.Notification{
-						{NotificationID: "ntf_123", TriggerStatus: "documents_pending", Message: "envie os documentos"},
+						{
+							NotificationID: "ntf_123",
+							TriggerStatus:  "documents_pending",
+							Message:        "envie os documentos",
+							Recipient:      "maria@example.com",
+						},
 					},
 				}
 				return http.StatusOK, nil
@@ -190,6 +197,15 @@ func TestGetProposalAggregatesCustomerAndDocuments(t *testing.T) {
 	if proposal.Customer == nil || proposal.Customer.CustomerID != "cus_123" {
 		t.Fatal("expected aggregated customer in response")
 	}
+	if proposal.Customer.CPF != "*******8901" {
+		t.Fatalf("expected masked cpf, got %s", proposal.Customer.CPF)
+	}
+	if proposal.Customer.Email != "m****@example.com" {
+		t.Fatalf("expected masked email, got %s", proposal.Customer.Email)
+	}
+	if proposal.Customer.Phone != "*******9999" {
+		t.Fatalf("expected masked phone, got %s", proposal.Customer.Phone)
+	}
 	if len(proposal.Documents) != 1 || proposal.Documents[0].DocumentID != "doc_123" {
 		t.Fatal("expected aggregated documents in response")
 	}
@@ -201,6 +217,9 @@ func TestGetProposalAggregatesCustomerAndDocuments(t *testing.T) {
 	}
 	if len(proposal.Notifications) != 1 || proposal.Notifications[0].NotificationID != "ntf_123" {
 		t.Fatal("expected aggregated notifications in response")
+	}
+	if proposal.Notifications[0].Recipient != "m****@example.com" {
+		t.Fatalf("expected masked notification recipient, got %s", proposal.Notifications[0].Recipient)
 	}
 }
 

@@ -16,6 +16,7 @@ import (
 	"creditflow/services/notification/internal/httpapi"
 	"creditflow/services/notification/internal/observability"
 	"creditflow/services/notification/internal/repository/postgres"
+	"creditflow/services/notification/internal/security"
 )
 
 func main() {
@@ -34,7 +35,12 @@ func main() {
 		log.Fatalf("ping db: %v", err)
 	}
 
-	repo := postgres.NewNotificationRepository(db)
+	crypto, err := security.NewCipher(cfg.EncryptionKey)
+	if err != nil {
+		log.Fatalf("load encryption key: %v", err)
+	}
+
+	repo := postgres.NewNotificationRepository(db, crypto)
 	if err := repo.EnsureSchema(ctx); err != nil {
 		log.Fatalf("ensure schema: %v", err)
 	}

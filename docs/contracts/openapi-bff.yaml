@@ -294,6 +294,7 @@ components:
           type: string
     CustomerDetails:
       type: object
+      description: Dados consolidados do cliente com campos sensiveis mascarados na resposta externa do BFF.
       properties:
         customer_id:
           type: string
@@ -303,12 +304,15 @@ components:
           type: string
         cpf:
           type: string
+          example: "*******8901"
         birth_date:
           type: string
         email:
           type: string
+          example: "m****@example.com"
         phone:
           type: string
+          example: "*******9999"
         monthly_income:
           type: number
           format: double
@@ -393,6 +397,7 @@ components:
           format: date-time
     NotificationEntry:
       type: object
+      description: Historico de notificacoes com destinatario mascarado.
       properties:
         notification_id:
           type: string
@@ -404,6 +409,7 @@ components:
           type: string
         recipient:
           type: string
+          example: "m****@example.com"
         message:
           type: string
         status:

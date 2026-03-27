@@ -226,7 +226,7 @@ func (s *server) getProposal(w http.ResponseWriter, r *http.Request, correlation
 
 	var customer backend.Customer
 	if _, err := s.customers.Get(r.Context(), "/internal/proposals/"+proposalID+"/customer", correlationID, &customer); err == nil {
-		response.Customer = &customer
+		response.Customer = maskCustomer(&customer)
 	}
 
 	var documents backend.DocumentList
@@ -246,7 +246,7 @@ func (s *server) getProposal(w http.ResponseWriter, r *http.Request, correlation
 
 	var notifications backend.NotificationList
 	if _, err := s.notifications.Get(r.Context(), "/internal/proposals/"+proposalID+"/notifications", correlationID, &notifications); err == nil {
-		response.Notifications = notifications.Notifications
+		response.Notifications = maskNotifications(notifications.Notifications)
 	}
 
 	writeJSON(w, http.StatusOK, response)

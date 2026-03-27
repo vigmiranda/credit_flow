@@ -3,6 +3,7 @@ package httpapi
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -37,5 +38,13 @@ func TestCreateNotification(t *testing.T) {
 
 	if resp.Code != http.StatusAccepted {
 		t.Fatalf("expected status %d, got %d", http.StatusAccepted, resp.Code)
+	}
+
+	var notification domain.Notification
+	if err := json.NewDecoder(resp.Body).Decode(&notification); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if notification.Recipient != "m****@example.com" {
+		t.Fatalf("expected masked recipient, got %s", notification.Recipient)
 	}
 }

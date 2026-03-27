@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"creditflow/services/notification/internal/domain"
+	"creditflow/services/notification/internal/security"
 )
 
 const headerCorrelationID = "X-Correlation-Id"
@@ -104,6 +105,7 @@ func (s *server) createNotification(w http.ResponseWriter, r *http.Request, corr
 		return
 	}
 
+	notification.Recipient = security.MaskRecipient(notification.Channel, notification.Recipient)
 	writeJSON(w, http.StatusAccepted, notification)
 }
 

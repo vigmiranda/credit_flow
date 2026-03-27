@@ -259,9 +259,9 @@ Objetivo: endurecer a solucao para operacao real.
 | --- | --- | --- | --- | --- |
 | E7-01 | Adicionar logs estruturados | concluido | E4-01, E4-02 | Logs consistentes com correlation-id |
 | E7-02 | Adicionar metricas e tracing | concluido | E7-01 | Visibilidade ponta a ponta |
-| E7-03 | Implementar mascaramento de dados sensiveis | pendente | E2-05 | Protecao de logs e payloads |
-| E7-04 | Configurar secrets e criptografia | pendente | E1-04 | Segregacao segura de credenciais e chaves |
-| E7-05 | Definir alarmes e dashboards minimos | pendente | E7-02 | Monitoracao operacional basica |
+| E7-03 | Implementar mascaramento de dados sensiveis | concluido | E2-05 | Protecao de logs e payloads |
+| E7-04 | Configurar secrets e criptografia | concluido | E1-04 | Segregacao segura de credenciais e chaves |
+| E7-05 | Definir alarmes e dashboards minimos | concluido | E7-02 | Monitoracao operacional basica |
 
 ### Epico 8 - Qualidade e entrega
 
@@ -271,7 +271,7 @@ Objetivo: garantir repetibilidade, confianca e evolucao continua.
 | --- | --- | --- | --- | --- |
 | E8-01 | Configurar lint e testes automatizados | concluido | E1-03 | Validacao automatica no repositorio |
 | E8-02 | Configurar pipeline CI/CD inicial | concluido | E8-01 | Build, testes e empacotamento automatizados |
-| E8-03 | Definir estrategia de deploy | pendente | E8-02 | Fluxo de entrega em dev e homologacao |
+| E8-03 | Definir estrategia de deploy | concluido | E8-02 | Fluxo de entrega em dev e homologacao |
 | E8-04 | Executar smoke tests do MVP | concluido | E3-06, E6-03, E8-02 | Validacao minima ponta a ponta |
 
 ## Ordem recomendada de execucao
@@ -333,16 +333,16 @@ Objetivo: garantir repetibilidade, confianca e evolucao continua.
 
 ### Ciclo atual
 
-- Identificador: ciclo-8
+- Identificador: ciclo-9
 - Status: aberto
-- Objetivo: endurecer seguranca operacional e preparar deploy
+- Objetivo: ampliar confiabilidade operacional e autenticacao inicial
 - Itens priorizados:
-  - E7-03 Implementar mascaramento de dados sensiveis
-  - E7-04 Configurar secrets e criptografia
-  - E7-05 Definir alarmes e dashboards minimos
-  - E8-03 Definir estrategia de deploy
+  - E1-04 Preparar ambiente local minimo
+  - E3-02 Implementar autenticacao inicial
+  - consolidar cache e componentes auxiliares do ambiente local
+  - preparar rollout de autenticacao mock para OIDC-ready
 - Observacao:
-  - logs, metricas, pipeline e smoke test do MVP ja foram entregues no ciclo anterior
+  - ciclo-8 fechou seguranca minima, secrets por arquivo, alarmes basicos e estrategia de deploy
 
 ## Entregas materializadas no ciclo-3
 
@@ -397,6 +397,15 @@ Objetivo: garantir repetibilidade, confianca e evolucao continua.
 - smoke test automatizado do MVP em `scripts/smoke_mvp.ps1`;
 - execucao bem-sucedida do smoke test local contra o fluxo fim a fim.
 
+## Entregas materializadas no ciclo-8
+
+- `BFF` mascarando `cpf`, `email`, `phone` e `recipient` nas respostas externas;
+- `notification service` com destinatario mascarado para leitura e copia criptografada em repouso;
+- suporte a `*_FILE` para secrets de banco nos servicos `proposal`, `customer`, `document` e `notification`;
+- documentacao operacional em `docs/seguranca_operacional.md`, `docs/alarmes_dashboards.md` e `docs/estrategia_deploy.md`;
+- atualizacao do contrato do BFF para refletir mascaramento de campos sensiveis;
+- smoke test ajustado para exercitar a chave de criptografia da notificacao.
+
 ### Historico
 
 | Ciclo | Status | Resumo |
@@ -409,3 +418,4 @@ Objetivo: garantir repetibilidade, confianca e evolucao continua.
 | ciclo-5 | concluido | Workflow inicial entregue com analises simuladas, persistencia dos resultados e consolidacao automatica da proposta |
 | ciclo-6 | concluido | Notification Service, historico da proposta, timeline no front e validacao automatizada basica entregues |
 | ciclo-7 | concluido | Observabilidade inicial, build de imagens e smoke test do MVP entregues |
+| ciclo-8 | concluido | Mascaramento de PII no BFF, secrets por arquivo, criptografia de destinatario em notificacoes e documentacao operacional entregues |

@@ -40,6 +40,9 @@ Entregar um slice vertical demonstravel do fluxo de proposta:
 - `planning/backlog_implementacao.md`: backlog vivo do projeto
 - `docs/padroes_desenvolvimento.md`: convencoes de engenharia
 - `docs/workflow_inicial.md`: fluxo do MVP para analises simuladas
+- `docs/seguranca_operacional.md`: mascaramento, secrets via arquivo e criptografia
+- `docs/alarmes_dashboards.md`: monitoracao minima para operacao
+- `docs/estrategia_deploy.md`: fluxo recomendado de entrega por imagens
 - `use_case/plano_implementacao_itau_cartoes.md`: plano macro original
 
 ## Servicos disponiveis no momento
@@ -82,6 +85,12 @@ Entregar um slice vertical demonstravel do fluxo de proposta:
 
 - `GET /metrics` disponivel em `bff`, `proposal`, `workflow` e `notification`
 - logs estruturados em JSON com `correlation_id`, `path`, `status_code` e `duration_ms`
+
+## Seguranca minima atual
+
+- `GET /api/v1/proposals/{proposalId}` retorna `cpf`, `email`, `phone` e `recipient` mascarados
+- `notification service` persiste destinatario mascarado e copia criptografada
+- servicos stateful aceitam `DATABASE_URL` e equivalentes via variaveis `*_FILE`
 
 ## Enderecos padrao
 
