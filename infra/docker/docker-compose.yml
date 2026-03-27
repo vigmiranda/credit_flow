@@ -15,6 +15,7 @@ services:
       retries: 5
     volumes:
       - postgres_data:/var/lib/postgresql/data
+
   redis:
     image: redis:7-alpine
     container_name: credit-flow-redis
@@ -25,12 +26,14 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
   mailpit:
     image: axllent/mailpit:v1.20
     container_name: credit-flow-mailpit
     ports:
       - "1025:1025"
       - "8025:8025"
+
   minio:
     image: minio/minio:RELEASE.2026-01-03T00-00-00Z
     container_name: credit-flow-minio
@@ -43,6 +46,151 @@ services:
       - "9001:9001"
     volumes:
       - minio_data:/data
+
+  proposal:
+    build:
+      context: ../../services/proposal
+    container_name: credit-flow-proposal
+    environment:
+      PROPOSAL_SERVICE_PORT: "8081"
+      PROPOSAL_SERVICE_DATABASE_URL: postgres://credit_flow:credit_flow@postgres:5432/credit_flow?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8081:8081"
+
+  customer:
+    build:
+      context: ../../services/customer
+    container_name: credit-flow-customer
+    environment:
+      CUSTOMER_SERVICE_PORT: "8082"
+      CUSTOMER_SERVICE_DATABASE_URL: postgres://credit_flow:credit_flow@postgres:5432/credit_flow?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8082:8082"
+
+  document:
+    build:
+      context: ../../services/document
+    container_name: credit-flow-document
+    environment:
+      DOCUMENT_SERVICE_PORT: "8083"
+      DOCUMENT_SERVICE_DATABASE_URL: postgres://credit_flow:credit_flow@postgres:5432/credit_flow?sslmode=disable
+      DOCUMENT_SERVICE_UPLOAD_BASE_URL: http://localhost:9000/mock-upload
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    ports:
+      - "8083:8083"
+
+  credit-analysis:
+    build:
+      context: ../../services/credit-analysis
+    container_name: credit-flow-credit-analysis
+    environment:
+      CREDIT_ANALYSIS_SERVICE_PORT: "8085"
+    ports:
+      - "8085:8085"
+
+  fraud-analysis:
+    build:
+      context: ../../services/fraud-analysis
+    container_name: credit-flow-fraud-analysis
+    environment:
+      FRAUD_ANALYSIS_SERVICE_PORT: "8086"
+    ports:
+      - "8086:8086"
+
+  notification:
+    build:
+      context: ../../services/notification
+    container_name: credit-flow-notification
+    environment:
+      NOTIFICATION_SERVICE_PORT: "8087"
+      NOTIFICATION_SERVICE_DATABASE_URL: postgres://credit_flow:credit_flow@postgres:5432/credit_flow?sslmode=disable
+      NOTIFICATION_SERVICE_ENCRYPTION_KEY: credit-flow-local-notification-key
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8087:8087"
+
+  workflow:
+    build:
+      context: ../../services/workflow
+    container_name: credit-flow-workflow
+    environment:
+      WORKFLOW_SERVICE_PORT: "8084"
+      WORKFLOW_ANALYSIS_DELAY_MS: "250"
+      WORKFLOW_SERVICE_PROPOSAL_URL: http://proposal:8081
+      WORKFLOW_SERVICE_CUSTOMER_URL: http://customer:8082
+      WORKFLOW_SERVICE_DOCUMENT_URL: http://document:8083
+      WORKFLOW_SERVICE_CREDIT_URL: http://credit-analysis:8085
+      WORKFLOW_SERVICE_FRAUD_URL: http://fraud-analysis:8086
+      WORKFLOW_SERVICE_NOTIFICATION_URL: http://notification:8087
+    depends_on:
+      proposal:
+        condition: service_started
+      customer:
+        condition: service_started
+      document:
+        condition: service_started
+      credit-analysis:
+        condition: service_started
+      fraud-analysis:
+        condition: service_started
+      notification:
+        condition: service_started
+    ports:
+      - "8084:8084"
+
+  bff:
+    build:
+      context: ../../services/bff
+    container_name: credit-flow-bff
+    environment:
+      BFF_PORT: "8080"
+      PROPOSAL_SERVICE_URL: http://proposal:8081
+      CUSTOMER_SERVICE_URL: http://customer:8082
+      DOCUMENT_SERVICE_URL: http://document:8083
+      WORKFLOW_SERVICE_URL: http://workflow:8084
+      NOTIFICATION_SERVICE_URL: http://notification:8087
+    depends_on:
+      proposal:
+        condition: service_started
+      customer:
+        condition: service_started
+      document:
+        condition: service_started
+      workflow:
+        condition: service_started
+      notification:
+        condition: service_started
+    ports:
+      - "8080:8080"
+
+  web:
+    build:
+      context: ../../apps/web
+      args:
+        NEXT_PUBLIC_BFF_URL: http://localhost:8080
+    container_name: credit-flow-web
+    environment:
+      NODE_ENV: production
+      NEXT_PUBLIC_BFF_URL: http://localhost:8080
+      AUTH_MODE: mock
+      OIDC_REDIRECT_URI: http://localhost:3000/api/auth/callback
+    depends_on:
+      bff:
+        condition: service_started
+    ports:
+      - "3000:3000"
 
 volumes:
   postgres_data:

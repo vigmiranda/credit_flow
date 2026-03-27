@@ -60,20 +60,18 @@ Entregar um slice vertical demonstravel do fluxo de proposta:
 
 ## Subida local
 
-1. Subir o banco:
-   `docker compose -f infra/docker/docker-compose.yml up -d`
-2. Subir os servicos Go em terminais separados:
-   `go run ./cmd/api` em `services/proposal`
-   `go run ./cmd/api` em `services/customer`
-   `go run ./cmd/api` em `services/document`
-   `go run ./cmd/api` em `services/credit-analysis`
-   `go run ./cmd/api` em `services/fraud-analysis`
-   `go run ./cmd/api` em `services/notification`
-   `go run ./cmd/api` em `services/workflow`
-   `go run ./cmd/api` em `services/bff`
-3. Subir o front:
-   `npm install`
-   `npm run dev` em `apps/web`
+1. Subir toda a stack com um unico comando:
+   `powershell -ExecutionPolicy Bypass -File .\scripts\up_local_stack.ps1`
+2. Abrir a aplicacao:
+   `http://localhost:3000`
+3. Derrubar a stack quando terminar:
+   `powershell -ExecutionPolicy Bypass -File .\scripts\down_local_stack.ps1`
+
+Se preferir rodar sem os scripts:
+`docker compose -f infra/docker/docker-compose.yml up -d --build`
+
+Pre-requisito:
+`Docker Desktop` precisa estar ativo no host.
 
 ## Ambiente local auxiliar
 
@@ -82,6 +80,15 @@ Entregar um slice vertical demonstravel do fluxo de proposta:
 - `mailpit` UI em `http://localhost:8025`
 - `minio` API em `http://localhost:9000`
 - `minio` console em `http://localhost:9001`
+- `proposal` em `http://localhost:8081`
+- `customer` em `http://localhost:8082`
+- `document` em `http://localhost:8083`
+- `workflow` em `http://localhost:8084`
+- `credit-analysis` em `http://localhost:8085`
+- `fraud-analysis` em `http://localhost:8086`
+- `notification` em `http://localhost:8087`
+- `bff` em `http://localhost:8080`
+- `web` em `http://localhost:3000`
 
 ## Autenticacao inicial
 
