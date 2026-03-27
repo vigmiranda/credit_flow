@@ -75,7 +75,7 @@ Pre-requisito:
 
 ## Ambiente local auxiliar
 
-- `postgres` em `localhost:5432`
+- `postgres` em `localhost:15432`
 - `redis` em `localhost:6379`
 - `mailpit` UI em `http://localhost:8025`
 - `minio` API em `http://localhost:9000`

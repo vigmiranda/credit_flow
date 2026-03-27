@@ -23,7 +23,7 @@ docker compose -f infra/docker/docker-compose.yml up -d --build
 
 ## Enderecos padrao
 
-- PostgreSQL: `localhost:5432`
+- PostgreSQL: `localhost:15432`
 - Redis: `localhost:6379`
 - Mailpit SMTP: `localhost:1025`
 - Mailpit UI: `http://localhost:8025`
