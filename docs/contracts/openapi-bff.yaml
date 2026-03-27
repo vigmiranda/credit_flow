@@ -1,0 +1,260 @@
+openapi: 3.0.3
+info:
+  title: Credit Flow BFF API
+  version: 0.1.0
+  description: Contrato inicial do BFF para o MVP de propostas de cartoes.
+servers:
+  - url: http://localhost:8080
+paths:
+  /healthz:
+    get:
+      summary: Health check
+      operationId: healthCheck
+      responses:
+        "200":
+          description: Servico saudavel
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+  /api/v1/proposals:
+    post:
+      summary: Criar proposta
+      operationId: createProposal
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: false
+      responses:
+        "201":
+          description: Proposta criada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateProposalResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+  /api/v1/proposals/{proposalId}:
+    get:
+      summary: Consultar proposta
+      operationId: getProposal
+      parameters:
+        - $ref: "#/components/parameters/ProposalId"
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "200":
+          description: Proposta encontrada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProposalResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/proposals/{proposalId}/status:
+    get:
+      summary: Consultar status da proposta
+      operationId: getProposalStatus
+      parameters:
+        - $ref: "#/components/parameters/ProposalId"
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "200":
+          description: Status encontrado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProposalStatusResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/proposals/{proposalId}/customer:
+    post:
+      summary: Salvar dados do cliente da proposta
+      operationId: upsertCustomer
+      parameters:
+        - $ref: "#/components/parameters/ProposalId"
+        - $ref: "#/components/parameters/CorrelationId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CustomerRequest"
+      responses:
+        "202":
+          description: Dados recebidos para processamento
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AcceptedResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+  /api/v1/proposals/{proposalId}/documents/upload-url:
+    post:
+      summary: Gerar URL de upload do documento
+      operationId: createDocumentUploadUrl
+      parameters:
+        - $ref: "#/components/parameters/ProposalId"
+        - $ref: "#/components/parameters/CorrelationId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DocumentUploadRequest"
+      responses:
+        "200":
+          description: URL gerada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocumentUploadResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+components:
+  parameters:
+    ProposalId:
+      name: proposalId
+      in: path
+      required: true
+      schema:
+        type: string
+    CorrelationId:
+      name: X-Correlation-Id
+      in: header
+      required: false
+      schema:
+        type: string
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      schema:
+        type: string
+  responses:
+    BadRequest:
+      description: Requisicao invalida
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    NotFound:
+      description: Recurso nao encontrado
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+  schemas:
+    HealthResponse:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          example: ok
+    CreateProposalResponse:
+      type: object
+      required: [proposal_id, protocol, status]
+      properties:
+        proposal_id:
+          type: string
+        protocol:
+          type: string
+        status:
+          type: string
+          example: created
+    ProposalResponse:
+      type: object
+      required: [proposal_id, protocol, status, created_at]
+      properties:
+        proposal_id:
+          type: string
+        protocol:
+          type: string
+        status:
+          type: string
+        customer_id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    ProposalStatusResponse:
+      type: object
+      required: [proposal_id, status]
+      properties:
+        proposal_id:
+          type: string
+        status:
+          type: string
+        last_updated_at:
+          type: string
+          format: date-time
+    CustomerRequest:
+      type: object
+      required: [full_name, cpf, birth_date, email, phone, monthly_income]
+      properties:
+        full_name:
+          type: string
+        cpf:
+          type: string
+        birth_date:
+          type: string
+          format: date
+        email:
+          type: string
+          format: email
+        phone:
+          type: string
+        monthly_income:
+          type: number
+          format: double
+    DocumentUploadRequest:
+      type: object
+      required: [document_type, file_name, content_type]
+      properties:
+        document_type:
+          type: string
+          example: id_front
+        file_name:
+          type: string
+        content_type:
+          type: string
+          example: image/jpeg
+    DocumentUploadResponse:
+      type: object
+      required: [document_id, upload_url, file_key]
+      properties:
+        document_id:
+          type: string
+        upload_url:
+          type: string
+        file_key:
+          type: string
+    AcceptedResponse:
+      type: object
+      required: [status, message]
+      properties:
+        status:
+          type: string
+          example: accepted
+        message:
+          type: string
+    ErrorResponse:
+      type: object
+      required: [code, message, correlation_id]
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        correlation_id:
+          type: string
+        details:
+          type: object
+          additionalProperties: true
+
