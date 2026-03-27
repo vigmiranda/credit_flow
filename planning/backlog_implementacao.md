@@ -225,7 +225,7 @@ Objetivo: entregar o slice funcional principal da proposta.
 | --- | --- | --- | --- | --- |
 | E4-01 | Criar BFF inicial | concluido | E2-03 | API unica para o front |
 | E4-02 | Implementar Proposal Service | concluido | E2-01, E2-02 | Criacao, consulta e atualizacao da proposta |
-| E4-03 | Implementar Customer Service | pendente | E2-01, E2-03 | Cadastro e validacoes basicas de cliente |
+| E4-03 | Implementar Customer Service | concluido | E2-01, E2-03 | Cadastro e validacoes basicas de cliente |
 | E4-04 | Implementar Document Service | pendente | E2-01, E2-04 | URL assinada, metadados e evento de upload |
 | E4-05 | Persistencia inicial | em_andamento | E4-02, E4-03, E4-04 | Migrations e armazenamento transacional |
 
@@ -347,10 +347,14 @@ Objetivo: garantir repetibilidade, confianca e evolucao continua.
 ## Entregas materializadas no ciclo-3
 
 - `Proposal Service` em Go com criacao, consulta e atualizacao de status;
+- `Customer Service` em Go com cadastro, consulta por proposta e validacoes basicas;
 - persistencia real em PostgreSQL para propostas;
+- persistencia real em PostgreSQL para clientes;
 - ambiente local minimo com `docker-compose` para banco;
 - testes HTTP basicos do `Proposal Service`;
+- testes HTTP basicos do `Customer Service`;
 - validacao de compilacao com `go test ./...` no modulo de proposta.
+- validacao de compilacao com `go test ./...` no modulo de cliente.
 
 ### Historico
 
