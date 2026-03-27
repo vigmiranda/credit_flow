@@ -226,8 +226,8 @@ Objetivo: entregar o slice funcional principal da proposta.
 | E4-01 | Criar BFF inicial | concluido | E2-03 | API unica para o front |
 | E4-02 | Implementar Proposal Service | concluido | E2-01, E2-02 | Criacao, consulta e atualizacao da proposta |
 | E4-03 | Implementar Customer Service | concluido | E2-01, E2-03 | Cadastro e validacoes basicas de cliente |
-| E4-04 | Implementar Document Service | pendente | E2-01, E2-04 | URL assinada, metadados e evento de upload |
-| E4-05 | Persistencia inicial | em_andamento | E4-02, E4-03, E4-04 | Migrations e armazenamento transacional |
+| E4-04 | Implementar Document Service | concluido | E2-01, E2-04 | URL assinada, metadados e evento de upload |
+| E4-05 | Persistencia inicial | concluido | E4-02, E4-03, E4-04 | Migrations e armazenamento transacional |
 
 ### Epico 5 - Workflow e analises assincronas
 
@@ -333,28 +333,32 @@ Objetivo: garantir repetibilidade, confianca e evolucao continua.
 
 ### Ciclo atual
 
-- Identificador: ciclo-3
-- Status: em_andamento
-- Objetivo: iniciar os servicos core e a persistencia do fluxo de proposta
+- Identificador: ciclo-4
+- Status: aberto
+- Objetivo: iniciar a jornada web e integrar o BFF ao backend core
 - Itens priorizados:
-  - E4-03 Implementar Customer Service
-  - E4-04 Implementar Document Service
-  - E4-05 Persistencia inicial
+  - E3-01 Criar aplicacao web base
+  - E3-03 Criar jornada de abertura de proposta
+  - E3-04 Criar jornada de cadastro do cliente
+  - E3-05 Criar jornada de upload de documentos
 - Observacao:
-  - os servicos devem nascer aderentes aos contratos e padroes definidos no ciclo-2
-  - a persistencia inicial ja foi aberta com PostgreSQL local e implementada para Proposal Service
+  - o BFF precisa deixar de ser stub e passar a consumir os servicos reais deste ciclo
 
 ## Entregas materializadas no ciclo-3
 
 - `Proposal Service` em Go com criacao, consulta e atualizacao de status;
 - `Customer Service` em Go com cadastro, consulta por proposta e validacoes basicas;
+- `Document Service` em Go com geracao de upload URL, listagem e confirmacao de recebimento;
 - persistencia real em PostgreSQL para propostas;
 - persistencia real em PostgreSQL para clientes;
+- persistencia real em PostgreSQL para documentos;
 - ambiente local minimo com `docker-compose` para banco;
 - testes HTTP basicos do `Proposal Service`;
 - testes HTTP basicos do `Customer Service`;
+- testes HTTP basicos do `Document Service`;
 - validacao de compilacao com `go test ./...` no modulo de proposta.
 - validacao de compilacao com `go test ./...` no modulo de cliente.
+- validacao de compilacao com `go test ./...` no modulo de documentos.
 
 ### Historico
 
@@ -363,4 +367,4 @@ Objetivo: garantir repetibilidade, confianca e evolucao continua.
 | ciclo-0 | concluido | Backlog inicial criado a partir do plano macro |
 | ciclo-1 | concluido | Escopo do MVP, estrutura inicial do repositorio, padroes de desenvolvimento, entidades e maquina de estados definidos |
 | ciclo-2 | concluido | Contratos de API, eventos assincronos, padroes transversais e BFF inicial definidos e validados |
-| ciclo-3 | em_andamento | Proposal Service e persistencia inicial abertos, com foco restante em Customer Service e Document Service |
+| ciclo-3 | concluido | Backend core inicial entregue com Proposal Service, Customer Service, Document Service e persistencia em PostgreSQL |
