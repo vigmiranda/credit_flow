@@ -24,6 +24,7 @@ func main() {
 			backend.NewClient(cfg.CustomerServiceURL),
 			backend.NewClient(cfg.DocumentServiceURL),
 			backend.NewClient(cfg.WorkflowServiceURL),
+			backend.NewClient(cfg.NotificationServiceURL),
 		),
 		ReadHeaderTimeout: 5 * time.Second,
 	}

@@ -224,6 +224,14 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/AnalysisResult"
+        status_history:
+          type: array
+          items:
+            $ref: "#/components/schemas/StatusHistoryEntry"
+        notifications:
+          type: array
+          items:
+            $ref: "#/components/schemas/NotificationEntry"
         created_at:
           type: string
           format: date-time
@@ -366,6 +374,45 @@ components:
           type: integer
         reason:
           type: string
+        created_at:
+          type: string
+          format: date-time
+    StatusHistoryEntry:
+      type: object
+      properties:
+        status_history_id:
+          type: string
+        proposal_id:
+          type: string
+        status:
+          type: string
+        source:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+    NotificationEntry:
+      type: object
+      properties:
+        notification_id:
+          type: string
+        proposal_id:
+          type: string
+        channel:
+          type: string
+        template:
+          type: string
+        recipient:
+          type: string
+        message:
+          type: string
+        status:
+          type: string
+        trigger_status:
+          type: string
+        sent_at:
+          type: string
+          format: date-time
         created_at:
           type: string
           format: date-time

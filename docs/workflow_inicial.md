@@ -22,6 +22,7 @@ Descrever o fluxo implementado para a simulacao das analises de documento, credi
 14. o `fraud-analysis service` executa a analise simulada;
 15. o resultado e persistido no `proposal service`;
 16. o workflow consolida a decisao final da proposta.
+17. notificacoes sao registradas ao longo do fluxo sem bloquear a proposta.
 
 ## Regras de consolidacao
 
@@ -49,5 +50,5 @@ Descrever o fluxo implementado para a simulacao das analises de documento, credi
 
 - o disparo do workflow e assincrono a partir do BFF;
 - os resultados ficam persistidos no `proposal service`;
+- as notificacoes ficam persistidas no `notification service`;
 - o front le a proposta consolidada com cliente, documentos e resultados das analises.
-

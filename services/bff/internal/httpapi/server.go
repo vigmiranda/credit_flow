@@ -34,11 +34,17 @@ type workflowGateway interface {
 	Post(ctx context.Context, path, correlationID string, payload any, out any) (int, error)
 }
 
+type notificationGateway interface {
+	Post(ctx context.Context, path, correlationID string, payload any, out any) (int, error)
+	Get(ctx context.Context, path, correlationID string, out any) (int, error)
+}
+
 type server struct {
-	proposals proposalGateway
-	customers customerGateway
-	documents documentGateway
-	workflow  workflowGateway
+	proposals     proposalGateway
+	customers     customerGateway
+	documents     documentGateway
+	workflow      workflowGateway
+	notifications notificationGateway
 }
 
 type healthResponse struct {
@@ -59,14 +65,16 @@ type createProposalResponse struct {
 }
 
 type proposalResponse struct {
-	ProposalID      string                   `json:"proposal_id"`
-	Protocol        string                   `json:"protocol"`
-	Status          string                   `json:"status"`
-	Customer        *backend.Customer        `json:"customer,omitempty"`
-	Documents       []backend.Document       `json:"documents,omitempty"`
-	AnalysisResults []backend.AnalysisResult `json:"analysis_results,omitempty"`
-	CreatedAt       string                   `json:"created_at"`
-	UpdatedAt       string                   `json:"updated_at"`
+	ProposalID      string                       `json:"proposal_id"`
+	Protocol        string                       `json:"protocol"`
+	Status          string                       `json:"status"`
+	Customer        *backend.Customer            `json:"customer,omitempty"`
+	Documents       []backend.Document           `json:"documents,omitempty"`
+	AnalysisResults []backend.AnalysisResult     `json:"analysis_results,omitempty"`
+	StatusHistory   []backend.StatusHistoryEntry `json:"status_history,omitempty"`
+	Notifications   []backend.Notification       `json:"notifications,omitempty"`
+	CreatedAt       string                       `json:"created_at"`
+	UpdatedAt       string                       `json:"updated_at"`
 }
 
 type proposalStatusResponse struct {
@@ -102,12 +110,13 @@ type documentUploadResponse struct {
 	Status     string `json:"status,omitempty"`
 }
 
-func NewServer(proposals proposalGateway, customers customerGateway, documents documentGateway, workflow workflowGateway) http.Handler {
+func NewServer(proposals proposalGateway, customers customerGateway, documents documentGateway, workflow workflowGateway, notifications notificationGateway) http.Handler {
 	return &server{
-		proposals: proposals,
-		customers: customers,
-		documents: documents,
-		workflow:  workflow,
+		proposals:     proposals,
+		customers:     customers,
+		documents:     documents,
+		workflow:      workflow,
+		notifications: notifications,
 	}
 }
 
@@ -230,6 +239,16 @@ func (s *server) getProposal(w http.ResponseWriter, r *http.Request, correlation
 		response.AnalysisResults = analysisResults.AnalysisResults
 	}
 
+	var statusHistory backend.StatusHistoryList
+	if _, err := s.proposals.Get(r.Context(), "/internal/proposals/"+proposalID+"/status-history", correlationID, &statusHistory); err == nil {
+		response.StatusHistory = statusHistory.StatusHistory
+	}
+
+	var notifications backend.NotificationList
+	if _, err := s.notifications.Get(r.Context(), "/internal/proposals/"+proposalID+"/notifications", correlationID, &notifications); err == nil {
+		response.Notifications = notifications.Notifications
+	}
+
 	writeJSON(w, http.StatusOK, response)
 }
 
@@ -271,6 +290,7 @@ func (s *server) upsertCustomer(w http.ResponseWriter, r *http.Request, correlat
 	_, _ = s.proposals.Patch(r.Context(), "/internal/proposals/"+proposalID+"/status", correlationID, map[string]string{
 		"status": "documents_pending",
 	}, &proposal)
+	s.sendNotification(r.Context(), proposalID, payload.Email, "documents_pending", "Recebemos seus dados. Agora envie os documentos da proposta.", correlationID)
 
 	writeJSON(w, http.StatusAccepted, acceptedResponse{
 		Status:  "accepted",
@@ -327,6 +347,9 @@ func (s *server) markDocumentReceived(w http.ResponseWriter, r *http.Request, co
 	_, _ = s.proposals.Patch(r.Context(), "/internal/proposals/"+proposalID+"/status", correlationID, map[string]string{
 		"status": "documents_received",
 	}, &proposal)
+	if email, ok := s.fetchCustomerEmail(r.Context(), proposalID, correlationID); ok {
+		s.sendNotification(r.Context(), proposalID, email, "documents_received", "Recebemos seus documentos e vamos iniciar as analises.", correlationID)
+	}
 
 	go s.triggerWorkflow(proposalID, correlationID)
 
@@ -338,6 +361,33 @@ func (s *server) triggerWorkflow(proposalID, correlationID string) {
 	defer cancel()
 
 	_, _ = s.workflow.Post(ctx, "/internal/proposals/"+proposalID+"/run-analyses", correlationID, nil, nil)
+}
+
+func (s *server) fetchCustomerEmail(ctx context.Context, proposalID, correlationID string) (string, bool) {
+	var customer backend.Customer
+	if _, err := s.customers.Get(ctx, "/internal/proposals/"+proposalID+"/customer", correlationID, &customer); err != nil {
+		return "", false
+	}
+
+	if strings.TrimSpace(customer.Email) == "" {
+		return "", false
+	}
+
+	return customer.Email, true
+}
+
+func (s *server) sendNotification(ctx context.Context, proposalID, recipient, triggerStatus, message, correlationID string) {
+	if strings.TrimSpace(recipient) == "" {
+		return
+	}
+
+	_, _ = s.notifications.Post(ctx, "/internal/proposals/"+proposalID+"/notifications", correlationID, map[string]any{
+		"channel":        "email",
+		"template":       "proposal_status_changed",
+		"recipient":      recipient,
+		"message":        message,
+		"trigger_status": triggerStatus,
+	}, nil)
 }
 
 func getOrCreateCorrelationID(r *http.Request) string {

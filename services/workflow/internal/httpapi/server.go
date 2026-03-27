@@ -19,12 +19,13 @@ type gateway interface {
 }
 
 type server struct {
-	proposals gateway
-	customers gateway
-	documents gateway
-	credit    gateway
-	fraud     gateway
-	delay     time.Duration
+	proposals     gateway
+	customers     gateway
+	documents     gateway
+	credit        gateway
+	fraud         gateway
+	notifications gateway
+	delay         time.Duration
 }
 
 type workflowResponse struct {
@@ -40,14 +41,15 @@ type errorResponse struct {
 	Details       map[string]any `json:"details,omitempty"`
 }
 
-func NewServer(proposals gateway, customers gateway, documents gateway, credit gateway, fraud gateway, delay time.Duration) http.Handler {
+func NewServer(proposals gateway, customers gateway, documents gateway, credit gateway, fraud gateway, notifications gateway, delay time.Duration) http.Handler {
 	return &server{
-		proposals: proposals,
-		customers: customers,
-		documents: documents,
-		credit:    credit,
-		fraud:     fraud,
-		delay:     delay,
+		proposals:     proposals,
+		customers:     customers,
+		documents:     documents,
+		credit:        credit,
+		fraud:         fraud,
+		notifications: notifications,
+		delay:         delay,
 	}
 }
 
@@ -96,6 +98,7 @@ func (s *server) runWorkflow(ctx context.Context, proposalID, correlationID stri
 	if err := s.updateProposalStatus(ctx, proposalID, "document_analysis_in_progress", correlationID); err != nil {
 		return response, err
 	}
+	s.sendNotification(ctx, proposalID, customer.Email, "document_analysis_in_progress", "Sua proposta entrou em analise documental.", correlationID)
 	time.Sleep(s.delay)
 
 	var documentAnalysis backend.AnalysisResult
@@ -109,12 +112,14 @@ func (s *server) runWorkflow(ctx context.Context, proposalID, correlationID stri
 	if final, done := finalizeFromResult(documentAnalysis); done {
 		response.FinalStatus = final
 		_ = s.updateProposalStatus(ctx, proposalID, final, correlationID)
+		s.sendNotification(ctx, proposalID, customer.Email, final, statusMessage(final), correlationID)
 		return response, nil
 	}
 
 	if err := s.updateProposalStatus(ctx, proposalID, "credit_analysis_in_progress", correlationID); err != nil {
 		return response, err
 	}
+	s.sendNotification(ctx, proposalID, customer.Email, "credit_analysis_in_progress", "Sua proposta entrou em analise de credito.", correlationID)
 	time.Sleep(s.delay)
 
 	var creditAnalysis backend.AnalysisResult
@@ -130,12 +135,14 @@ func (s *server) runWorkflow(ctx context.Context, proposalID, correlationID stri
 	if final, done := finalizeFromResult(creditAnalysis); done {
 		response.FinalStatus = final
 		_ = s.updateProposalStatus(ctx, proposalID, final, correlationID)
+		s.sendNotification(ctx, proposalID, customer.Email, final, statusMessage(final), correlationID)
 		return response, nil
 	}
 
 	if err := s.updateProposalStatus(ctx, proposalID, "fraud_analysis_in_progress", correlationID); err != nil {
 		return response, err
 	}
+	s.sendNotification(ctx, proposalID, customer.Email, "fraud_analysis_in_progress", "Sua proposta entrou em analise antifraude.", correlationID)
 	time.Sleep(s.delay)
 
 	var fraudAnalysis backend.AnalysisResult
@@ -160,6 +167,7 @@ func (s *server) runWorkflow(ctx context.Context, proposalID, correlationID stri
 	if err := s.updateProposalStatus(ctx, proposalID, finalStatus, correlationID); err != nil {
 		return response, err
 	}
+	s.sendNotification(ctx, proposalID, customer.Email, finalStatus, statusMessage(finalStatus), correlationID)
 
 	response.FinalStatus = finalStatus
 	return response, nil
@@ -191,6 +199,35 @@ func finalizeFromResult(result backend.AnalysisResult) (string, bool) {
 		return "rejected", true
 	default:
 		return "", false
+	}
+}
+
+func (s *server) sendNotification(ctx context.Context, proposalID, recipient, status, message, correlationID string) {
+	if strings.TrimSpace(recipient) == "" {
+		return
+	}
+
+	_ = s.notifications.Post(ctx, "/internal/proposals/"+proposalID+"/notifications", correlationID, map[string]any{
+		"channel":        "email",
+		"template":       "proposal_status_changed",
+		"recipient":      recipient,
+		"message":        message,
+		"trigger_status": status,
+	}, nil)
+}
+
+func statusMessage(status string) string {
+	switch status {
+	case "approved":
+		return "Sua proposta foi aprovada."
+	case "rejected":
+		return "Sua proposta foi reprovada."
+	case "manual_review":
+		return "Sua proposta foi direcionada para revisao manual."
+	case "awaiting_additional_documents":
+		return "Sua proposta precisa de documentos complementares."
+	default:
+		return "Sua proposta mudou de status."
 	}
 }
 

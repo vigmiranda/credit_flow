@@ -25,6 +25,7 @@ func main() {
 			backend.NewClient(cfg.DocumentServiceURL),
 			backend.NewClient(cfg.CreditAnalysisServiceURL),
 			backend.NewClient(cfg.FraudAnalysisServiceURL),
+			backend.NewClient(cfg.NotificationServiceURL),
 			cfg.AnalysisDelay,
 		),
 		ReadHeaderTimeout: 5 * time.Second,

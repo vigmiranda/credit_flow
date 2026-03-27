@@ -50,6 +50,7 @@ Entregar um slice vertical demonstravel do fluxo de proposta:
 - `services/workflow`: orquestra as analises simuladas do MVP
 - `services/credit-analysis`: simulador de analise de credito
 - `services/fraud-analysis`: simulador de analise de fraude
+- `services/notification`: registra o historico de notificacoes simuladas
 - `services/bff`: agrega os servicos core para o front
 - `apps/web`: jornada inicial em Next.js consumindo o BFF
 
@@ -63,11 +64,17 @@ Entregar um slice vertical demonstravel do fluxo de proposta:
    `go run ./cmd/api` em `services/document`
    `go run ./cmd/api` em `services/credit-analysis`
    `go run ./cmd/api` em `services/fraud-analysis`
+   `go run ./cmd/api` em `services/notification`
    `go run ./cmd/api` em `services/workflow`
    `go run ./cmd/api` em `services/bff`
 3. Subir o front:
    `npm install`
    `npm run dev` em `apps/web`
+
+## Validacao rapida
+
+- local: `powershell -ExecutionPolicy Bypass -File .\scripts\verify.ps1`
+- CI: `.github/workflows/validate.yml`
 
 ## Enderecos padrao
 
@@ -79,3 +86,4 @@ Entregar um slice vertical demonstravel do fluxo de proposta:
 - Workflow Service: `http://localhost:8084`
 - Credit Analysis Service: `http://localhost:8085`
 - Fraud Analysis Service: `http://localhost:8086`
+- Notification Service: `http://localhost:8087`

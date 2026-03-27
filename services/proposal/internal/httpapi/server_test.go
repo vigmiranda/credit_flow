@@ -15,17 +15,20 @@ import (
 type stubStore struct {
 	items           map[string]domain.Proposal
 	analysisResults map[string][]domain.AnalysisResult
+	statusHistory   map[string][]domain.StatusHistoryEntry
 }
 
 func newStubStore() *stubStore {
 	return &stubStore{
 		items:           map[string]domain.Proposal{},
 		analysisResults: map[string][]domain.AnalysisResult{},
+		statusHistory:   map[string][]domain.StatusHistoryEntry{},
 	}
 }
 
 func (s *stubStore) Create(_ context.Context, proposal domain.Proposal) error {
 	s.items[proposal.ID] = proposal
+	s.statusHistory[proposal.ID] = append(s.statusHistory[proposal.ID], domain.NewStatusHistoryEntry(proposal.ID, proposal.Status, "proposal_service", proposal.CreatedAt))
 	return nil
 }
 
@@ -47,6 +50,7 @@ func (s *stubStore) UpdateStatus(_ context.Context, proposalID, status string, u
 	proposal.Status = status
 	proposal.UpdatedAt = updatedAt
 	s.items[proposalID] = proposal
+	s.statusHistory[proposalID] = append(s.statusHistory[proposalID], domain.NewStatusHistoryEntry(proposalID, status, "proposal_service", updatedAt))
 	return proposal, nil
 }
 
@@ -57,6 +61,10 @@ func (s *stubStore) CreateAnalysisResult(_ context.Context, result domain.Analys
 
 func (s *stubStore) ListAnalysisResults(_ context.Context, proposalID string) ([]domain.AnalysisResult, error) {
 	return s.analysisResults[proposalID], nil
+}
+
+func (s *stubStore) ListStatusHistory(_ context.Context, proposalID string) ([]domain.StatusHistoryEntry, error) {
+	return s.statusHistory[proposalID], nil
 }
 
 func TestCreateProposal(t *testing.T) {
@@ -111,5 +119,21 @@ func TestCreateAnalysisResult(t *testing.T) {
 
 	if resp.Code != http.StatusCreated {
 		t.Fatalf("expected status %d, got %d", http.StatusCreated, resp.Code)
+	}
+}
+
+func TestListStatusHistory(t *testing.T) {
+	store := newStubStore()
+	proposal := domain.NewProposal("corr-test", time.Now().UTC())
+	_ = store.Create(context.Background(), proposal)
+
+	srv := NewServer(store)
+	req := httptest.NewRequest(http.MethodGet, "/internal/proposals/"+proposal.ID+"/status-history", nil)
+	resp := httptest.NewRecorder()
+
+	srv.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, resp.Code)
 	}
 }

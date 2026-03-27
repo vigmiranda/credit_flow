@@ -29,6 +29,8 @@ export type Proposal = {
   customer?: Customer;
   documents?: Document[];
   analysis_results?: AnalysisResult[];
+  status_history?: StatusHistoryEntry[];
+  notifications?: NotificationEntry[];
   created_at: string;
   updated_at: string;
 };
@@ -42,6 +44,27 @@ export type AnalysisResult = {
   score: number;
   reason: string;
   created_at?: string;
+};
+
+export type StatusHistoryEntry = {
+  status_history_id: string;
+  proposal_id: string;
+  status: string;
+  source: string;
+  created_at: string;
+};
+
+export type NotificationEntry = {
+  notification_id: string;
+  proposal_id: string;
+  channel: string;
+  template: string;
+  recipient: string;
+  message: string;
+  status: string;
+  trigger_status: string;
+  sent_at: string;
+  created_at: string;
 };
 
 type CustomerPayload = {

@@ -38,6 +38,14 @@ func (r *ProposalRepository) EnsureSchema(ctx context.Context) error {
 		reason TEXT NOT NULL,
 		created_at TIMESTAMPTZ NOT NULL
 	);
+
+	CREATE TABLE IF NOT EXISTS proposal_status_history (
+		id TEXT PRIMARY KEY,
+		proposal_id TEXT NOT NULL,
+		status TEXT NOT NULL,
+		source TEXT NOT NULL,
+		created_at TIMESTAMPTZ NOT NULL
+	);
 	`
 
 	_, err := r.db.ExecContext(ctx, query)
@@ -60,7 +68,11 @@ func (r *ProposalRepository) Create(ctx context.Context, proposal domain.Proposa
 		proposal.CreatedAt,
 		proposal.UpdatedAt,
 	)
-	return err
+	if err != nil {
+		return err
+	}
+
+	return r.insertStatusHistory(ctx, domain.NewStatusHistoryEntry(proposal.ID, proposal.Status, "proposal_service", proposal.CreatedAt))
 }
 
 func (r *ProposalRepository) GetByID(ctx context.Context, proposalID string) (domain.Proposal, error) {
@@ -112,6 +124,10 @@ func (r *ProposalRepository) UpdateStatus(ctx context.Context, proposalID, statu
 			return domain.Proposal{}, domain.ErrProposalNotFound
 		}
 
+		return domain.Proposal{}, err
+	}
+
+	if err := r.insertStatusHistory(ctx, domain.NewStatusHistoryEntry(proposalID, status, "proposal_service", updatedAt)); err != nil {
 		return domain.Proposal{}, err
 	}
 
@@ -180,4 +196,46 @@ func (r *ProposalRepository) ListAnalysisResults(ctx context.Context, proposalID
 	}
 
 	return results, rows.Err()
+}
+
+func (r *ProposalRepository) ListStatusHistory(ctx context.Context, proposalID string) ([]domain.StatusHistoryEntry, error) {
+	const query = `
+	SELECT id, proposal_id, status, source, created_at
+	FROM proposal_status_history
+	WHERE proposal_id = $1
+	ORDER BY created_at ASC;
+	`
+
+	rows, err := r.db.QueryContext(ctx, query, proposalID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var entries []domain.StatusHistoryEntry
+	for rows.Next() {
+		var entry domain.StatusHistoryEntry
+		if err := rows.Scan(
+			&entry.ID,
+			&entry.ProposalID,
+			&entry.Status,
+			&entry.Source,
+			&entry.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		entries = append(entries, entry)
+	}
+
+	return entries, rows.Err()
+}
+
+func (r *ProposalRepository) insertStatusHistory(ctx context.Context, entry domain.StatusHistoryEntry) error {
+	const query = `
+	INSERT INTO proposal_status_history (id, proposal_id, status, source, created_at)
+	VALUES ($1, $2, $3, $4, $5);
+	`
+
+	_, err := r.db.ExecContext(ctx, query, entry.ID, entry.ProposalID, entry.Status, entry.Source, entry.CreatedAt)
+	return err
 }

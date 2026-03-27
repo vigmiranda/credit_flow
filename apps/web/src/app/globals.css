@@ -353,6 +353,54 @@ select:focus {
   font-size: 0.9rem;
 }
 
+.timeline-stack {
+  display: grid;
+  gap: 12px;
+}
+
+.timeline-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  padding: 14px 16px;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  background: var(--surface-strong);
+}
+
+.timeline-badge {
+  min-width: 88px;
+  padding: 7px 10px;
+  border-radius: 999px;
+  text-align: center;
+  text-transform: uppercase;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.timeline-status {
+  background: rgba(28, 102, 96, 0.12);
+  color: var(--secondary);
+}
+
+.timeline-notification {
+  background: rgba(182, 84, 45, 0.12);
+  color: var(--primary-strong);
+}
+
+.timeline-content {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.timeline-content span,
+.timeline-row time {
+  color: var(--muted);
+}
+
 .empty-state {
   margin: 0;
   color: var(--muted);
@@ -377,7 +425,8 @@ select:focus {
   }
 
   .footer-bar,
-  .collection-item {
+  .collection-item,
+  .timeline-row {
     flex-direction: column;
     align-items: flex-start;
   }

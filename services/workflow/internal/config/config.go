@@ -13,6 +13,7 @@ type Config struct {
 	DocumentServiceURL       string
 	CreditAnalysisServiceURL string
 	FraudAnalysisServiceURL  string
+	NotificationServiceURL   string
 	AnalysisDelay            time.Duration
 }
 
@@ -24,6 +25,7 @@ func Load() Config {
 		DocumentServiceURL:       getEnv("WORKFLOW_SERVICE_DOCUMENT_URL", getEnv("DOCUMENT_SERVICE_URL", "http://localhost:8083")),
 		CreditAnalysisServiceURL: getEnv("WORKFLOW_SERVICE_CREDIT_URL", getEnv("CREDIT_ANALYSIS_SERVICE_URL", "http://localhost:8085")),
 		FraudAnalysisServiceURL:  getEnv("WORKFLOW_SERVICE_FRAUD_URL", getEnv("FRAUD_ANALYSIS_SERVICE_URL", "http://localhost:8086")),
+		NotificationServiceURL:   getEnv("WORKFLOW_SERVICE_NOTIFICATION_URL", getEnv("NOTIFICATION_SERVICE_URL", "http://localhost:8087")),
 		AnalysisDelay:            time.Duration(getEnvInt("WORKFLOW_ANALYSIS_DELAY_MS", 250)) * time.Millisecond,
 	}
 }

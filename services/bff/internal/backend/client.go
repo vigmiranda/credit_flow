@@ -76,6 +76,37 @@ type AnalysisResultList struct {
 	AnalysisResults []AnalysisResult `json:"analysis_results"`
 }
 
+type StatusHistoryEntry struct {
+	StatusHistoryID string `json:"status_history_id"`
+	ProposalID      string `json:"proposal_id"`
+	Status          string `json:"status"`
+	Source          string `json:"source"`
+	CreatedAt       string `json:"created_at"`
+}
+
+type StatusHistoryList struct {
+	ProposalID    string               `json:"proposal_id"`
+	StatusHistory []StatusHistoryEntry `json:"status_history"`
+}
+
+type Notification struct {
+	NotificationID string `json:"notification_id"`
+	ProposalID     string `json:"proposal_id"`
+	Channel        string `json:"channel"`
+	Template       string `json:"template"`
+	Recipient      string `json:"recipient"`
+	Message        string `json:"message"`
+	Status         string `json:"status"`
+	TriggerStatus  string `json:"trigger_status"`
+	SentAt         string `json:"sent_at"`
+	CreatedAt      string `json:"created_at"`
+}
+
+type NotificationList struct {
+	ProposalID    string         `json:"proposal_id"`
+	Notifications []Notification `json:"notifications"`
+}
+
 type ErrorResponse struct {
 	Code          string         `json:"code"`
 	Message       string         `json:"message"`

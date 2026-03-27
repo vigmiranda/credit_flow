@@ -19,6 +19,7 @@ type ProposalStore interface {
 	UpdateStatus(ctx context.Context, proposalID, status string, updatedAt time.Time) (domain.Proposal, error)
 	CreateAnalysisResult(ctx context.Context, result domain.AnalysisResult) error
 	ListAnalysisResults(ctx context.Context, proposalID string) ([]domain.AnalysisResult, error)
+	ListStatusHistory(ctx context.Context, proposalID string) ([]domain.StatusHistoryEntry, error)
 }
 
 type server struct {
@@ -104,6 +105,11 @@ func (s *server) handleProposalRoutes(w http.ResponseWriter, r *http.Request, co
 
 	if len(segments) == 2 && segments[1] == "analysis-results" && r.Method == http.MethodGet {
 		s.listAnalysisResults(w, r, correlationID, proposalID)
+		return
+	}
+
+	if len(segments) == 2 && segments[1] == "status-history" && r.Method == http.MethodGet {
+		s.listStatusHistory(w, r, correlationID, proposalID)
 		return
 	}
 
@@ -201,6 +207,19 @@ func (s *server) listAnalysisResults(w http.ResponseWriter, r *http.Request, cor
 	writeJSON(w, http.StatusOK, map[string]any{
 		"proposal_id":      proposalID,
 		"analysis_results": results,
+	})
+}
+
+func (s *server) listStatusHistory(w http.ResponseWriter, r *http.Request, correlationID, proposalID string) {
+	entries, err := s.store.ListStatusHistory(r.Context(), proposalID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, correlationID, "internal_error", "falha ao listar historico", nil)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"proposal_id":    proposalID,
+		"status_history": entries,
 	})
 }
 

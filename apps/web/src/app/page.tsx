@@ -48,6 +48,20 @@ const analysisLabels: Record<string, string> = {
   fraud: "Fraude",
 };
 
+const timelineLabels: Record<string, string> = {
+  created: "Proposta criada",
+  customer_data_pending: "Aguardando dados do cliente",
+  documents_pending: "Aguardando documentos",
+  documents_received: "Documentos recebidos",
+  document_analysis_in_progress: "Analise documental iniciada",
+  credit_analysis_in_progress: "Analise de credito iniciada",
+  fraud_analysis_in_progress: "Analise antifraude iniciada",
+  manual_review: "Proposta em revisao manual",
+  approved: "Proposta aprovada",
+  rejected: "Proposta reprovada",
+  awaiting_additional_documents: "Complementacao de documentos",
+};
+
 function formatStatus(status?: string) {
   if (!status) {
     return "Nao iniciado";
@@ -147,6 +161,22 @@ export default function HomePage() {
 
   const documents = proposal?.documents ?? [];
   const analysisResults = proposal?.analysis_results ?? [];
+  const timelineEvents = [
+    ...(proposal?.status_history ?? []).map((entry) => ({
+      id: entry.status_history_id,
+      timestamp: entry.created_at,
+      kind: "status" as const,
+      title: timelineLabels[entry.status] ?? entry.status,
+      detail: `Origem: ${entry.source}`,
+    })),
+    ...(proposal?.notifications ?? []).map((entry) => ({
+      id: entry.notification_id,
+      timestamp: entry.created_at,
+      kind: "notification" as const,
+      title: `Notificacao ${entry.channel}`,
+      detail: entry.message,
+    })),
+  ].sort((left, right) => new Date(right.timestamp).getTime() - new Date(left.timestamp).getTime());
 
   return (
     <main className="shell">
@@ -444,6 +474,29 @@ export default function HomePage() {
                       <span className={`status-pill status-${result.result}`}>{result.result}</span>
                       <span className="score-pill">score {result.score}</span>
                     </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="analysis-section">
+            <div className="analysis-header">
+              <h3>Timeline da proposta</h3>
+              <p>Historico de status e comunicacoes registradas no fluxo.</p>
+            </div>
+            {timelineEvents.length === 0 ? (
+              <p className="empty-state">Ainda nao ha eventos registrados para esta proposta.</p>
+            ) : (
+              <div className="timeline-stack">
+                {timelineEvents.map((event) => (
+                  <div className="timeline-row" key={event.id}>
+                    <div className={`timeline-badge timeline-${event.kind}`}>{event.kind}</div>
+                    <div className="timeline-content">
+                      <strong>{event.title}</strong>
+                      <span>{event.detail}</span>
+                    </div>
+                    <time>{new Date(event.timestamp).toLocaleString("pt-BR")}</time>
                   </div>
                 ))}
               </div>

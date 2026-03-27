@@ -98,7 +98,13 @@ func TestWorkflowApprovesProposal(t *testing.T) {
 		patchFunc: func(context.Context, string, string, any, any) error { return nil },
 	}
 
-	srv := NewServer(proposalGateway, customerGateway, documentGateway, creditGateway, fraudGateway, 0*time.Millisecond)
+	notificationGateway := stubGateway{
+		getFunc:   func(context.Context, string, string, any) error { return nil },
+		postFunc:  func(context.Context, string, string, any, any) error { return nil },
+		patchFunc: func(context.Context, string, string, any, any) error { return nil },
+	}
+
+	srv := NewServer(proposalGateway, customerGateway, documentGateway, creditGateway, fraudGateway, notificationGateway, 0*time.Millisecond)
 	req := httptest.NewRequest(http.MethodPost, "/internal/proposals/prop_123/run-analyses", nil)
 	resp := httptest.NewRecorder()
 

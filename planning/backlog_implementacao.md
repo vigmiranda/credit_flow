@@ -247,9 +247,9 @@ Objetivo: informar o cliente e registrar o historico do processo.
 
 | ID | Item | Status | Dependencias | Saida esperada |
 | --- | --- | --- | --- | --- |
-| E6-01 | Implementar Notification Service basico | pendente | E5-05 | Envio inicial de notificacoes por mudanca de status |
-| E6-02 | Registrar historico de comunicacoes | pendente | E6-01 | Trilha de tentativas, sucesso e falha |
-| E6-03 | Expor timeline da proposta no front | pendente | E6-02, E3-06 | Visualizacao do andamento para o usuario |
+| E6-01 | Implementar Notification Service basico | concluido | E5-05 | Envio inicial de notificacoes por mudanca de status |
+| E6-02 | Registrar historico de comunicacoes | concluido | E6-01 | Trilha de tentativas, sucesso e falha |
+| E6-03 | Expor timeline da proposta no front | concluido | E6-02, E3-06 | Visualizacao do andamento para o usuario |
 
 ### Epico 7 - Observabilidade, seguranca e operacao
 
@@ -269,7 +269,7 @@ Objetivo: garantir repetibilidade, confianca e evolucao continua.
 
 | ID | Item | Status | Dependencias | Saida esperada |
 | --- | --- | --- | --- | --- |
-| E8-01 | Configurar lint e testes automatizados | pendente | E1-03 | Validacao automatica no repositorio |
+| E8-01 | Configurar lint e testes automatizados | concluido | E1-03 | Validacao automatica no repositorio |
 | E8-02 | Configurar pipeline CI/CD inicial | pendente | E8-01 | Build, testes e empacotamento automatizados |
 | E8-03 | Definir estrategia de deploy | pendente | E8-02 | Fluxo de entrega em dev e homologacao |
 | E8-04 | Executar smoke tests do MVP | pendente | E3-06, E6-03, E8-02 | Validacao minima ponta a ponta |
@@ -333,16 +333,16 @@ Objetivo: garantir repetibilidade, confianca e evolucao continua.
 
 ### Ciclo atual
 
-- Identificador: ciclo-6
+- Identificador: ciclo-7
 - Status: aberto
-- Objetivo: iniciar notificacoes, historico do processo e base de qualidade
+- Objetivo: iniciar observabilidade e pipeline do repositorio
 - Itens priorizados:
-  - E6-01 Implementar Notification Service basico
-  - E6-02 Registrar historico de comunicacoes
-  - E6-03 Expor timeline da proposta no front
-  - E8-01 Configurar lint e testes automatizados
+  - E7-01 Adicionar logs estruturados
+  - E7-02 Adicionar metricas e tracing
+  - E8-02 Configurar pipeline CI/CD inicial
+  - E8-04 Executar smoke tests do MVP
 - Observacao:
-  - o ciclo anterior ja entrega workflow automatico com analises simuladas e decisao consolidada
+  - notificacoes, timeline e validacao automatizada basica ja foram entregues no ciclo anterior
 
 ## Entregas materializadas no ciclo-3
 
@@ -379,6 +379,15 @@ Objetivo: garantir repetibilidade, confianca e evolucao continua.
 - documentacao do fluxo em `docs/workflow_inicial.md`;
 - validacao com `go test ./...` nos modulos `proposal`, `document`, `credit-analysis`, `fraud-analysis`, `workflow` e `bff`.
 
+## Entregas materializadas no ciclo-6
+
+- `notification service` com persistencia em PostgreSQL e entrega simulada;
+- historico de status persistido no `proposal service`;
+- `BFF` agregando status, analises, historico e notificacoes na proposta consolidada;
+- timeline da proposta exibida no front com eventos de status e comunicacoes;
+- validacao automatizada basica com `scripts/verify.ps1`;
+- workflow GitHub Actions em `.github/workflows/validate.yml`.
+
 ### Historico
 
 | Ciclo | Status | Resumo |
@@ -389,3 +398,4 @@ Objetivo: garantir repetibilidade, confianca e evolucao continua.
 | ciclo-3 | concluido | Backend core inicial entregue com Proposal Service, Customer Service, Document Service e persistencia em PostgreSQL |
 | ciclo-4 | concluido | BFF integrado ao backend core e front web base entregue com a jornada principal do MVP |
 | ciclo-5 | concluido | Workflow inicial entregue com analises simuladas, persistencia dos resultados e consolidacao automatica da proposta |
+| ciclo-6 | concluido | Notification Service, historico da proposta, timeline no front e validacao automatizada basica entregues |
