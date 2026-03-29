@@ -95,6 +95,54 @@ Construimos um `slice vertical` demonstravel para propostas de cartao, com jorna
 - codigo enxuto para APIs e workers;
 - boa adequacao para componentes independentes e concorrencia simples.
 
+### Como estruturamos o backend
+
+- cada servico foi organizado em camadas proximas de `clean architecture` / `hexagonal`;
+- o dominio fica separado da borda HTTP e da persistencia;
+- regras de negocio ficam no centro;
+- adapters de entrada e saida ficam nas bordas.
+
+### Leitura pratica da estrutura
+
+```text
+cmd/api                -> bootstrap do servico
+internal/httpapi       -> adapter HTTP
+internal/domain        -> entidades e regras de negocio
+internal/repository    -> persistencia
+internal/backend       -> clientes HTTP para outros servicos
+internal/observability -> metricas e logs
+```
+
+### Por que usamos esse estilo
+
+- reduz acoplamento entre regra de negocio e infraestrutura;
+- facilita trocar banco, fila ou integracoes sem reescrever o dominio;
+- torna os servicos mais testaveis;
+- ajuda a manter clareza mesmo com varios servicos pequenos.
+
+### Como explicar isso na apresentacao
+
+`Nao escolhemos Go apenas pela linguagem. Escolhemos tambem uma organizacao interna que separa o nucleo de negocio da borda HTTP e da persistencia. Isso deixa o sistema mais facil de evoluir e mais seguro para integrar parceiros reais depois.`
+
+## Estrategia de testes
+
+- testes unitarios nos modulos centrais dos servicos;
+- testes de integracao por servico via `go test ./...`;
+- validacao do front com `npm run typecheck` e `next build`;
+- smoke test ponta a ponta da stack Docker;
+- readiness final consolidando verificacao, smoke e overview operacional.
+
+### O que isso nos deu
+
+- validacao isolada dos servicos;
+- validacao da integracao entre servicos;
+- validacao da jornada completa do usuario;
+- evidencias objetivas para demo e handoff.
+
+### Frase curta para apresentar
+
+`A validacao nao depende de confianca manual. Temos testes por servico, validacao de build do front e smoke ponta a ponta da stack completa.`
+
 ## Persistencia
 
 - `PostgreSQL`
