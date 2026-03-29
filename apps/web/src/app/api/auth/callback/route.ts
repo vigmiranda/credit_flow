@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 
 import { getAuthConfig } from "@/lib/auth/config";
 import { AUTH_COOKIE_NAME, serializeSession } from "@/lib/auth/core";
-import { decodeIDToken, exchangeCodeForToken, fetchUserInfo } from "@/lib/auth/oidc";
+import { exchangeCodeForToken, fetchUserInfo, verifyIDToken } from "@/lib/auth/oidc";
 
 const OIDC_STATE_COOKIE = "credit_flow_oidc_state";
 
@@ -44,7 +44,9 @@ export async function GET(request: Request) {
       const userInfo = tokenResponse.access_token
         ? await fetchUserInfo(authConfig, tokenResponse.access_token)
         : null;
-      const idTokenClaims = tokenResponse.id_token ? decodeIDToken(tokenResponse.id_token) : null;
+      const idTokenClaims = tokenResponse.id_token
+        ? await verifyIDToken(authConfig, tokenResponse.id_token)
+        : null;
       profile = {
         sub: userInfo?.sub || idTokenClaims?.sub || profile.sub,
         name: userInfo?.name || idTokenClaims?.name || profile.name,

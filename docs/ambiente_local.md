@@ -38,6 +38,7 @@ docker compose -f infra/docker/docker-compose.yml up -d --build
 - os servicos internos Go ficam acessiveis pela rede Docker e expostos ao host apenas via `web` e `bff`;
 - o upload documental usa o bucket `proposal-documents` no MinIO;
 - o `workflow service` usa Redis como fila de processamento e reaplica retries configuraveis;
+- o `workflow service` registra DLQ e profundidade da fila em `/metrics`;
 - as notificacoes do `notification service` sao entregues por SMTP local no Mailpit;
 - `scripts/smoke_docker_stack.ps1` valida a stack Docker ponta a ponta sem precisar subir processos Go manuais;
 - o smoke test isolado segue disponivel em `scripts/smoke_mvp.ps1` para diagnostico fora do compose.

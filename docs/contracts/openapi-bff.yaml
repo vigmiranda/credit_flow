@@ -176,6 +176,27 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "404":
           $ref: "#/components/responses/NotFound"
+  /api/v1/webhooks/storage/document-uploaded:
+    post:
+      summary: Receber callback externo de upload concluido
+      operationId: handleStorageDocumentUploaded
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StorageWebhookRequest"
+      responses:
+        "202":
+          description: Callback aceito e workflow disparado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AcceptedWebhookResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
 components:
   parameters:
     ProposalId:
@@ -479,3 +500,33 @@ components:
         details:
           type: object
           additionalProperties: true
+    StorageWebhookRequest:
+      type: object
+      required: [proposal_id, document_id]
+      properties:
+        proposal_id:
+          type: string
+        document_id:
+          type: string
+        provider:
+          type: string
+        event_type:
+          type: string
+        occurred_at:
+          type: string
+          format: date-time
+    AcceptedWebhookResponse:
+      type: object
+      required: [status, proposal_id, document_id]
+      properties:
+        status:
+          type: string
+          example: accepted
+        proposal_id:
+          type: string
+        document_id:
+          type: string
+        provider:
+          type: string
+        event_type:
+          type: string

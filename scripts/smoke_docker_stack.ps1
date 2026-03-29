@@ -57,7 +57,7 @@ function Send-MultipartFile {
 }
 
 try {
-  docker compose -f $composeFile up -d --build *> $null
+  docker compose -f $composeFile up -d --build | Out-Null
   Wait-ForHealth "$bffBaseUrl/healthz"
 
   Write-Host "==> Criando proposta"

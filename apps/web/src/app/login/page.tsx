@@ -41,6 +41,10 @@ export default async function LoginPage() {
             <strong>{authConfig.redirectUri}</strong>
           </div>
           <div>
+            <span>Discovery URL</span>
+            <strong>{authConfig.discoveryUrl || "nao definido"}</strong>
+          </div>
+          <div>
             <span>Authorize URL</span>
             <strong>{authConfig.authorizeUrl || "nao definido"}</strong>
           </div>

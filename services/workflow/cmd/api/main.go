@@ -41,6 +41,7 @@ func main() {
 		workflowQueue,
 		cfg.AnalysisDelay,
 		cfg.MaxRetries,
+		metrics,
 	)
 	apiHandler := metrics.Wrap(serverHandler)
 	mux := http.NewServeMux()

@@ -27,6 +27,7 @@ Descrever o fluxo implementado para a simulacao das analises de documento, credi
 19. o workflow consolida a decisao final da proposta;
 20. se houver falha tecnica, o worker reaplica o job ate o limite configurado e depois direciona a proposta para `manual_review`;
 21. notificacoes sao registradas ao longo do fluxo sem bloquear a proposta e enviadas por SMTP local.
+22. callbacks externos podem marcar documentos via webhook no BFF quando houver upload concluido fora da jornada sincrona do front.
 
 ## Regras de consolidacao
 
@@ -54,7 +55,9 @@ Descrever o fluxo implementado para a simulacao das analises de documento, credi
 
 - o disparo do workflow e assincrono a partir do BFF;
 - o processamento do workflow agora passa por fila com retry configuravel;
+- jobs esgotados vao para DLQ e ficam refletidos nas metricas do workflow;
 - o upload de documento passa por `BFF -> Document Service -> MinIO`;
+- o BFF expoe um webhook inicial em `/api/v1/webhooks/storage/document-uploaded` para callbacks externos;
 - os resultados ficam persistidos no `proposal service`;
 - as notificacoes ficam persistidas no `notification service` e sao enviadas para o Mailpit no ambiente local;
 - o front le a proposta consolidada com cliente, documentos e resultados das analises.

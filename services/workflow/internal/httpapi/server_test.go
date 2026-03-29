@@ -42,6 +42,7 @@ func TestRunAnalysesEnqueuesWorkflow(t *testing.T) {
 		workflowQueue,
 		0,
 		2,
+		nil,
 	)
 
 	req := httptest.NewRequest(http.MethodPost, "/internal/proposals/prop_123/run-analyses", nil)
@@ -172,6 +173,7 @@ func TestProcessJobApprovesProposal(t *testing.T) {
 		queue.NewMemoryQueue(1),
 		0,
 		2,
+		nil,
 	)
 
 	err := srv.processJob(context.Background(), queue.Job{

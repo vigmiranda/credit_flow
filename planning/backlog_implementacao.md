@@ -333,16 +333,16 @@ Objetivo: garantir repetibilidade, confianca e evolucao continua.
 
 ### Ciclo atual
 
-- Identificador: ciclo-12
+- Identificador: ciclo-13
 - Status: aberto
-- Objetivo: aproximar o MVP de integracoes externas reais e operacao assistida
+- Objetivo: endurecer integracoes externas e operacao do fluxo
 - Itens priorizados:
-  - preparar callbacks ou webhooks para storage e parceiros externos
-  - adicionar troca real de token com validacao criptografica do `id_token`
-  - ampliar observabilidade da fila com DLQ e metricas dedicadas
   - testar integracao local com issuer OIDC real ou mock dedicado
+  - adicionar validacao/autenticacao de webhook externo
+  - ampliar o workflow para callbacks de parceiros de credito e fraude
+  - expor inspeção operacional de DLQ e reprocessamento manual
 - Observacao:
-  - ciclo-11 fechou fila com retry no workflow, callback OIDC com token exchange e smoke da stack Docker
+  - ciclo-12 fechou webhook inicial, validacao criptografica de `id_token` e observabilidade de fila com DLQ
 
 ## Entregas materializadas no ciclo-3
 
@@ -435,6 +435,16 @@ Objetivo: garantir repetibilidade, confianca e evolucao continua.
 - documentacao atualizada para fluxo enfileirado, ambiente local e validacao ponta a ponta;
 - validacao com `go test ./...` no workflow, `npm run typecheck`, `npm run build` e smoke da stack Docker.
 
+## Entregas materializadas no ciclo-12
+
+- validacao criptografica de `id_token` no front usando discovery/JWKS e biblioteca `jose`;
+- novas variaveis de ambiente para discovery e JWKS do provedor OIDC;
+- `workflow service` com metricas de fila, retry, profundidade e DLQ em `/metrics`;
+- DLQ no workflow com suporte em Redis e fallback local em memoria;
+- webhook inicial no `BFF` para callback externo de upload concluido em `/api/v1/webhooks/storage/document-uploaded`;
+- contrato OpenAPI e documentacao do fluxo atualizados para o webhook e para o comportamento da DLQ;
+- validacao com `go test ./...` no `workflow` e `bff`, `npm run typecheck` e `npm run build`.
+
 ### Historico
 
 | Ciclo | Status | Resumo |
@@ -451,3 +461,4 @@ Objetivo: garantir repetibilidade, confianca e evolucao continua.
 | ciclo-9 | concluido | Autenticacao inicial mock OIDC-ready no front e ambiente local ampliado com Redis, Mailpit e MinIO |
 | ciclo-10 | concluido | Upload real via MinIO, notificacoes SMTP locais via Mailpit e callback OIDC inicial no front |
 | ciclo-11 | concluido | Workflow com fila e retry, callback OIDC com token exchange e smoke da stack Docker |
+| ciclo-12 | concluido | Validacao criptografica de id_token, DLQ e metricas da fila no workflow e webhook inicial de storage no BFF |

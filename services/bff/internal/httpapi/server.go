@@ -113,6 +113,14 @@ type documentUploadResponse struct {
 	Status     string `json:"status,omitempty"`
 }
 
+type storageWebhookRequest struct {
+	ProposalID string `json:"proposal_id"`
+	DocumentID string `json:"document_id"`
+	Provider   string `json:"provider,omitempty"`
+	EventType  string `json:"event_type,omitempty"`
+	OccurredAt string `json:"occurred_at,omitempty"`
+}
+
 func NewServer(proposals proposalGateway, customers customerGateway, documents documentGateway, workflow workflowGateway, notifications notificationGateway) http.Handler {
 	return &server{
 		proposals:     proposals,
@@ -139,6 +147,9 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	case r.Method == http.MethodPost && r.URL.Path == "/api/v1/proposals":
 		s.createProposal(w, r, correlationID)
+		return
+	case r.Method == http.MethodPost && r.URL.Path == "/api/v1/webhooks/storage/document-uploaded":
+		s.handleStorageDocumentUploaded(w, r, correlationID)
 		return
 	case strings.HasPrefix(r.URL.Path, "/api/v1/proposals/"):
 		s.handleProposalRoutes(w, r, correlationID)
@@ -353,14 +364,7 @@ func (s *server) markDocumentReceived(w http.ResponseWriter, r *http.Request, co
 	}
 
 	var proposal backend.Proposal
-	_, _ = s.proposals.Patch(r.Context(), "/internal/proposals/"+proposalID+"/status", correlationID, map[string]string{
-		"status": "documents_received",
-	}, &proposal)
-	if email, ok := s.fetchCustomerEmail(r.Context(), proposalID, correlationID); ok {
-		s.sendNotification(r.Context(), proposalID, email, "documents_received", "Recebemos seus documentos e vamos iniciar as analises.", correlationID)
-	}
-
-	go s.triggerWorkflow(proposalID, correlationID)
+	s.completeDocumentFlow(r.Context(), proposalID, correlationID, &proposal)
 
 	writeJSON(w, http.StatusAccepted, document)
 }
@@ -403,16 +407,47 @@ func (s *server) uploadDocumentContent(w http.ResponseWriter, r *http.Request, c
 	}
 
 	var proposal backend.Proposal
-	_, _ = s.proposals.Patch(r.Context(), "/internal/proposals/"+proposalID+"/status", correlationID, map[string]string{
-		"status": "documents_received",
-	}, &proposal)
-	if email, ok := s.fetchCustomerEmail(r.Context(), proposalID, correlationID); ok {
-		s.sendNotification(r.Context(), proposalID, email, "documents_received", "Recebemos seus documentos e vamos iniciar as analises.", correlationID)
-	}
-
-	go s.triggerWorkflow(proposalID, correlationID)
+	s.completeDocumentFlow(r.Context(), proposalID, correlationID, &proposal)
 
 	writeJSON(w, http.StatusAccepted, document)
+}
+
+func (s *server) handleStorageDocumentUploaded(w http.ResponseWriter, r *http.Request, correlationID string) {
+	var payload storageWebhookRequest
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		writeError(w, http.StatusBadRequest, correlationID, "invalid_request", "payload invalido", nil)
+		return
+	}
+
+	if strings.TrimSpace(payload.ProposalID) == "" || strings.TrimSpace(payload.DocumentID) == "" {
+		writeError(w, http.StatusBadRequest, correlationID, "invalid_request", "campos obrigatorios ausentes", map[string]any{
+			"required_fields": []string{"proposal_id", "document_id"},
+		})
+		return
+	}
+
+	var document backend.Document
+	if _, err := s.documents.Post(
+		r.Context(),
+		"/internal/proposals/"+payload.ProposalID+"/documents/"+payload.DocumentID+"/received",
+		correlationID,
+		nil,
+		&document,
+	); err != nil {
+		writeError(w, http.StatusBadGateway, correlationID, "upstream_error", "falha ao confirmar documento por webhook", nil)
+		return
+	}
+
+	var proposal backend.Proposal
+	s.completeDocumentFlow(r.Context(), payload.ProposalID, correlationID, &proposal)
+
+	writeJSON(w, http.StatusAccepted, map[string]any{
+		"status":      "accepted",
+		"proposal_id": payload.ProposalID,
+		"document_id": payload.DocumentID,
+		"provider":    payload.Provider,
+		"event_type":  payload.EventType,
+	})
 }
 
 func (s *server) triggerWorkflow(proposalID, correlationID string) {
@@ -420,6 +455,23 @@ func (s *server) triggerWorkflow(proposalID, correlationID string) {
 	defer cancel()
 
 	_, _ = s.workflow.Post(ctx, "/internal/proposals/"+proposalID+"/run-analyses", correlationID, nil, nil)
+}
+
+func (s *server) completeDocumentFlow(ctx context.Context, proposalID, correlationID string, proposal *backend.Proposal) {
+	if proposal != nil {
+		_, _ = s.proposals.Patch(ctx, "/internal/proposals/"+proposalID+"/status", correlationID, map[string]string{
+			"status": "documents_received",
+		}, proposal)
+	} else {
+		_, _ = s.proposals.Patch(ctx, "/internal/proposals/"+proposalID+"/status", correlationID, map[string]string{
+			"status": "documents_received",
+		}, nil)
+	}
+	if email, ok := s.fetchCustomerEmail(ctx, proposalID, correlationID); ok {
+		s.sendNotification(ctx, proposalID, email, "documents_received", "Recebemos seus documentos e vamos iniciar as analises.", correlationID)
+	}
+
+	go s.triggerWorkflow(proposalID, correlationID)
 }
 
 func (s *server) fetchCustomerEmail(ctx context.Context, proposalID, correlationID string) (string, bool) {

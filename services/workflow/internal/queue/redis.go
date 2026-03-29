@@ -12,6 +12,7 @@ import (
 type RedisQueue struct {
 	client      *redis.Client
 	queueName   string
+	dlqName     string
 	blockPeriod time.Duration
 }
 
@@ -24,6 +25,7 @@ func NewRedisQueue(redisURL, queueName string, blockPeriod time.Duration) (*Redi
 	return &RedisQueue{
 		client:      redis.NewClient(options),
 		queueName:   queueName,
+		dlqName:     queueName + ":dlq",
 		blockPeriod: blockPeriod,
 	}, nil
 }
@@ -61,4 +63,21 @@ func (q *RedisQueue) Dequeue(ctx context.Context) (Job, error) {
 
 		return job, nil
 	}
+}
+
+func (q *RedisQueue) Length(ctx context.Context) (int64, error) {
+	return q.client.LLen(ctx, q.queueName).Result()
+}
+
+func (q *RedisQueue) DeadLetter(ctx context.Context, job Job) error {
+	raw, err := json.Marshal(job)
+	if err != nil {
+		return err
+	}
+
+	return q.client.RPush(ctx, q.dlqName, raw).Err()
+}
+
+func (q *RedisQueue) DeadLetterLength(ctx context.Context) (int64, error) {
+	return q.client.LLen(ctx, q.dlqName).Result()
 }

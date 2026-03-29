@@ -30,6 +30,16 @@ type server struct {
 	queue         queue.Queue
 	delay         time.Duration
 	maxRetries    int
+	metrics       queueMetrics
+}
+
+type queueMetrics interface {
+	RecordQueueEnqueued()
+	RecordQueueProcessed()
+	RecordQueueRetried()
+	RecordQueueDeadLettered()
+	SetQueueDepth(value int64)
+	SetDeadLetterDepth(value int64)
 }
 
 type workflowResponse struct {
@@ -47,7 +57,7 @@ type errorResponse struct {
 	Details       map[string]any `json:"details,omitempty"`
 }
 
-func NewServer(proposals gateway, customers gateway, documents gateway, credit gateway, fraud gateway, notifications gateway, workflowQueue queue.Queue, delay time.Duration, maxRetries int) *server {
+func NewServer(proposals gateway, customers gateway, documents gateway, credit gateway, fraud gateway, notifications gateway, workflowQueue queue.Queue, delay time.Duration, maxRetries int, metrics queueMetrics) *server {
 	if maxRetries < 0 {
 		maxRetries = 0
 	}
@@ -62,6 +72,7 @@ func NewServer(proposals gateway, customers gateway, documents gateway, credit g
 		queue:         workflowQueue,
 		delay:         delay,
 		maxRetries:    maxRetries,
+		metrics:       metrics,
 	}
 }
 
@@ -109,6 +120,7 @@ func (s *server) handleProposalRoutes(w http.ResponseWriter, r *http.Request, co
 		writeError(w, http.StatusBadGateway, correlationID, "queue_error", "falha ao enfileirar workflow", nil)
 		return
 	}
+	s.recordQueueEnqueued(r.Context())
 
 	writeJSON(w, http.StatusAccepted, workflowResponse{
 		ProposalID:  segments[0],
@@ -135,6 +147,7 @@ func (s *server) workerLoop(ctx context.Context) {
 		err = s.processJob(runCtx, job)
 		cancel()
 		if err == nil {
+			s.recordQueueProcessed(ctx)
 			continue
 		}
 
@@ -145,7 +158,9 @@ func (s *server) workerLoop(ctx context.Context) {
 
 		job.Attempt++
 		job.EnqueuedAt = time.Now().UTC().Format(time.RFC3339)
+		job.LastError = err.Error()
 		_ = s.queue.Enqueue(ctx, job)
+		s.recordQueueRetried(ctx)
 	}
 }
 
@@ -243,6 +258,9 @@ func (s *server) runWorkflow(ctx context.Context, proposalID, correlationID stri
 
 func (s *server) handleWorkflowFailure(ctx context.Context, job queue.Job, workflowErr error) {
 	correlationID := nonEmptyCorrelationID(job.CorrelationID)
+	job.LastError = workflowErr.Error()
+	_ = s.queue.DeadLetter(ctx, job)
+	s.recordQueueDeadLettered(ctx)
 	_ = s.updateProposalStatus(ctx, job.ProposalID, "manual_review", correlationID)
 	if email, ok := s.fetchCustomerEmail(ctx, job.ProposalID, correlationID); ok {
 		s.sendNotification(
@@ -256,6 +274,55 @@ func (s *server) handleWorkflowFailure(ctx context.Context, job queue.Job, workf
 	}
 
 	_ = workflowErr
+}
+
+func (s *server) recordQueueEnqueued(ctx context.Context) {
+	if s.metrics == nil {
+		return
+	}
+
+	s.metrics.RecordQueueEnqueued()
+	s.refreshQueueDepth(ctx)
+}
+
+func (s *server) recordQueueProcessed(ctx context.Context) {
+	if s.metrics == nil {
+		return
+	}
+
+	s.metrics.RecordQueueProcessed()
+	s.refreshQueueDepth(ctx)
+}
+
+func (s *server) recordQueueRetried(ctx context.Context) {
+	if s.metrics == nil {
+		return
+	}
+
+	s.metrics.RecordQueueRetried()
+	s.refreshQueueDepth(ctx)
+}
+
+func (s *server) recordQueueDeadLettered(ctx context.Context) {
+	if s.metrics == nil {
+		return
+	}
+
+	s.metrics.RecordQueueDeadLettered()
+	s.refreshQueueDepth(ctx)
+}
+
+func (s *server) refreshQueueDepth(ctx context.Context) {
+	if s.metrics == nil {
+		return
+	}
+
+	if depth, err := s.queue.Length(ctx); err == nil {
+		s.metrics.SetQueueDepth(depth)
+	}
+	if depth, err := s.queue.DeadLetterLength(ctx); err == nil {
+		s.metrics.SetDeadLetterDepth(depth)
+	}
 }
 
 func (s *server) updateProposalStatus(ctx context.Context, proposalID, status, correlationID string) error {

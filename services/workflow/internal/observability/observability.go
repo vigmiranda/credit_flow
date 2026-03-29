@@ -16,6 +16,12 @@ type Metrics struct {
 	totalErrors   atomic.Int64
 	inflight      atomic.Int64
 	totalDuration atomic.Int64
+	queueEnqueued atomic.Int64
+	queueHandled  atomic.Int64
+	queueRetried  atomic.Int64
+	queueDLQ      atomic.Int64
+	queueDepth    atomic.Int64
+	dlqDepth      atomic.Int64
 	mu            sync.Mutex
 	paths         map[string]int64
 }
@@ -79,9 +85,41 @@ func (m *Metrics) Handler() http.Handler {
 			"total_errors":      m.totalErrors.Load(),
 			"inflight_requests": m.inflight.Load(),
 			"average_ms":        avgDuration,
-			"paths":             paths,
+			"queue": map[string]int64{
+				"enqueued":    m.queueEnqueued.Load(),
+				"processed":   m.queueHandled.Load(),
+				"retried":     m.queueRetried.Load(),
+				"dead_letter": m.queueDLQ.Load(),
+				"depth":       m.queueDepth.Load(),
+				"dlq_depth":   m.dlqDepth.Load(),
+			},
+			"paths": paths,
 		})
 	})
+}
+
+func (m *Metrics) RecordQueueEnqueued() {
+	m.queueEnqueued.Add(1)
+}
+
+func (m *Metrics) RecordQueueProcessed() {
+	m.queueHandled.Add(1)
+}
+
+func (m *Metrics) RecordQueueRetried() {
+	m.queueRetried.Add(1)
+}
+
+func (m *Metrics) RecordQueueDeadLettered() {
+	m.queueDLQ.Add(1)
+}
+
+func (m *Metrics) SetQueueDepth(value int64) {
+	m.queueDepth.Store(value)
+}
+
+func (m *Metrics) SetDeadLetterDepth(value int64) {
+	m.dlqDepth.Store(value)
 }
 
 type statusRecorder struct {

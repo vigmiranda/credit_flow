@@ -88,7 +88,7 @@ Pre-requisito:
 
 - `apps/web` agora protege `/` por cookie de sessao e redireciona para `/login`
 - `AUTH_MODE=mock` habilita login operacional local
-- `AUTH_MODE=oidc` habilita inicio de login via issuer configurado e callback local com validacao de `state` e troca de token
+- `AUTH_MODE=oidc` habilita inicio de login via issuer configurado, troca de token e validacao criptografica do `id_token` por discovery/JWKS
 
 ## Validacao rapida
 
@@ -103,6 +103,7 @@ Pre-requisito:
 - `GET /metrics` disponivel em `bff`, `proposal`, `workflow` e `notification`
 - logs estruturados em JSON com `correlation_id`, `path`, `status_code` e `duration_ms`
 - `workflow` usa Redis como fila quando `WORKFLOW_REDIS_URL` estiver configurado e cai para fila em memoria no fallback local
+- `/metrics` do `workflow` agora inclui enqueue, process, retry, DLQ e profundidade de fila
 
 ## Seguranca minima atual
 
@@ -116,3 +117,4 @@ Pre-requisito:
 - BFF: `http://localhost:18080`
 - Mailpit UI: `http://localhost:8025`
 - MinIO Console: `http://localhost:9001`
+- Webhook de storage: `POST /api/v1/webhooks/storage/document-uploaded`

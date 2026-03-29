@@ -481,3 +481,83 @@ func TestUploadDocumentContentTriggersWorkflow(t *testing.T) {
 		t.Fatal("expected notification after document upload")
 	}
 }
+
+func TestStorageWebhookTriggersWorkflow(t *testing.T) {
+	workflowTriggered := make(chan struct{}, 1)
+	notificationCalled := false
+	srv := NewServer(
+		stubProposalGateway{
+			postFunc: func(context.Context, string, string, any, any) (int, error) { return 0, errors.New("unexpected") },
+			getFunc:  func(context.Context, string, string, any) (int, error) { return 0, errors.New("unexpected") },
+			patchFunc: func(_ context.Context, path, _ string, payload any, out any) (int, error) {
+				if path != "/internal/proposals/prop_123/status" {
+					t.Fatalf("unexpected patch path %s", path)
+				}
+				return http.StatusOK, nil
+			},
+		},
+		stubCustomerGateway{
+			postFunc: func(context.Context, string, string, any, any) (int, error) { return 0, errors.New("unexpected") },
+			getFunc: func(_ context.Context, path, _ string, out any) (int, error) {
+				if path != "/internal/proposals/prop_123/customer" {
+					t.Fatalf("unexpected customer lookup path %s", path)
+				}
+				customer := out.(*backend.Customer)
+				customer.Email = "maria@example.com"
+				return http.StatusOK, nil
+			},
+		},
+		stubDocumentGateway{
+			postFunc: func(_ context.Context, path, _ string, payload any, out any) (int, error) {
+				if path != "/internal/proposals/prop_123/documents/doc_123/received" {
+					t.Fatalf("unexpected document path %s", path)
+				}
+				document := out.(*backend.Document)
+				document.DocumentID = "doc_123"
+				document.Status = "uploaded"
+				return http.StatusAccepted, nil
+			},
+			getFunc: func(context.Context, string, string, any) (int, error) { return 0, errors.New("unexpected") },
+			uploadFunc: func(context.Context, string, string, string, string, string, []byte, any) (int, error) {
+				return 0, errors.New("unexpected")
+			},
+		},
+		stubWorkflowGateway{
+			postFunc: func(_ context.Context, path, _ string, payload any, out any) (int, error) {
+				if path != "/internal/proposals/prop_123/run-analyses" {
+					t.Fatalf("unexpected workflow path %s", path)
+				}
+				workflowTriggered <- struct{}{}
+				return http.StatusAccepted, nil
+			},
+		},
+		stubNotificationGateway{
+			postFunc: func(_ context.Context, path, _ string, payload any, out any) (int, error) {
+				notificationCalled = true
+				if path != "/internal/proposals/prop_123/notifications" {
+					t.Fatalf("unexpected notification path %s", path)
+				}
+				return http.StatusAccepted, nil
+			},
+			getFunc: func(context.Context, string, string, any) (int, error) { return 0, errors.New("unexpected") },
+		},
+	)
+
+	body := bytes.NewBufferString(`{"proposal_id":"prop_123","document_id":"doc_123","provider":"minio","event_type":"object_created"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/storage/document-uploaded", body)
+	resp := httptest.NewRecorder()
+	srv.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusAccepted {
+		t.Fatalf("expected status %d, got %d", http.StatusAccepted, resp.Code)
+	}
+
+	select {
+	case <-workflowTriggered:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("expected workflow trigger after storage webhook")
+	}
+	if !notificationCalled {
+		t.Fatal("expected notification after storage webhook")
+	}
+}
