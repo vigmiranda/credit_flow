@@ -293,6 +293,17 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/WebhookAuditListResponse"
+  /internal/operations/overview:
+    get:
+      summary: Consolidar sinais operacionais do fluxo
+      operationId: getOperationsOverview
+      responses:
+        "200":
+          description: Visao consolidada de operacao
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OperationsOverviewResponse"
   /internal/webhooks/audit/{eventId}/replay-release:
     post:
       summary: Liberar manualmente o replay de um callback
@@ -811,3 +822,87 @@ paths:
         processed_at:
           type: string
           format: date-time
+    OperationsOverviewResponse:
+      type: object
+      properties:
+        generated_at:
+          type: string
+          format: date-time
+        workflow_metrics:
+          $ref: "#/components/schemas/WorkflowMetricsSnapshot"
+        workflow_dead_letters:
+          $ref: "#/components/schemas/DeadLetterCount"
+        callback_audit_summary:
+          $ref: "#/components/schemas/CallbackAuditSummary"
+        alerts:
+          type: array
+          items:
+            $ref: "#/components/schemas/OperationsAlert"
+    WorkflowMetricsSnapshot:
+      type: object
+      properties:
+        service:
+          type: string
+        total_requests:
+          type: integer
+        total_errors:
+          type: integer
+        inflight_requests:
+          type: integer
+        average_ms:
+          type: integer
+        queue:
+          $ref: "#/components/schemas/WorkflowQueueSnapshot"
+        paths:
+          type: object
+          additionalProperties:
+            type: integer
+    WorkflowQueueSnapshot:
+      type: object
+      properties:
+        enqueued:
+          type: integer
+        processed:
+          type: integer
+        retried:
+          type: integer
+        dead_letter:
+          type: integer
+        depth:
+          type: integer
+        dlq_depth:
+          type: integer
+    DeadLetterCount:
+      type: object
+      properties:
+        count:
+          type: integer
+    CallbackAuditSummary:
+      type: object
+      properties:
+        recent_count:
+          type: integer
+        processed:
+          type: integer
+        duplicate_ignored:
+          type: integer
+        rejected:
+          type: integer
+        rate_limited:
+          type: integer
+        invalid_provider:
+          type: integer
+        replay_released:
+          type: integer
+        expiring_within_hour:
+          type: integer
+    OperationsAlert:
+      type: object
+      properties:
+        severity:
+          type: string
+          enum: [info, warning, critical]
+        code:
+          type: string
+        message:
+          type: string

@@ -50,7 +50,9 @@ docker compose -f infra/docker/docker-compose.yml up -d --build
 - o rate limit do `BFF` usa o mesmo Redis da stack local com prefixo `bff:webhook:ratelimit`;
 - os limites por rota e parceiro sao configurados por `BFF_*_RATE_LIMIT` e `BFF_*_RATE_WINDOW_SECONDS`;
 - a limpeza operacional da auditoria fica disponivel em `POST http://localhost:18080/internal/webhooks/audit/cleanup`;
+- o resumo operacional consolidado pode ser consultado em `GET http://localhost:18080/internal/operations/overview`;
 - as notificacoes do `notification service` sao entregues por SMTP local no Mailpit;
 - o front sobe em modo `oidc` contra o `mock-oidc`, mas pode voltar para `AUTH_MODE=mock` se necessario;
 - `scripts/smoke_docker_stack.ps1` valida a stack Docker ponta a ponta sem precisar subir processos Go manuais;
+- `scripts/ops_overview.ps1` resume alertas, DLQ e sinais recentes de callback para triagem local;
 - o smoke test isolado segue disponivel em `scripts/smoke_mvp.ps1` para diagnostico fora do compose.

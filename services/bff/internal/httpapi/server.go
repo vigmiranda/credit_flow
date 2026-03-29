@@ -41,6 +41,7 @@ type documentGateway interface {
 
 type workflowGateway interface {
 	Post(ctx context.Context, path, correlationID string, payload any, out any) (int, error)
+	Get(ctx context.Context, path, correlationID string, out any) (int, error)
 }
 
 type notificationGateway interface {
@@ -173,6 +174,54 @@ type analysisWebhookRequest struct {
 	Reason     string `json:"reason,omitempty"`
 }
 
+type workflowOperationsMetrics struct {
+	Service          string            `json:"service"`
+	TotalRequests    int64             `json:"total_requests"`
+	TotalErrors      int64             `json:"total_errors"`
+	InflightRequests int64             `json:"inflight_requests"`
+	AverageMS        int64             `json:"average_ms"`
+	Queue            workflowQueueView `json:"queue"`
+	Paths            map[string]int64  `json:"paths"`
+}
+
+type workflowQueueView struct {
+	Enqueued   int64 `json:"enqueued"`
+	Processed  int64 `json:"processed"`
+	Retried    int64 `json:"retried"`
+	DeadLetter int64 `json:"dead_letter"`
+	Depth      int64 `json:"depth"`
+	DLQDepth   int64 `json:"dlq_depth"`
+}
+
+type callbackAuditSummary struct {
+	RecentCount        int `json:"recent_count"`
+	Processed          int `json:"processed"`
+	DuplicateIgnored   int `json:"duplicate_ignored"`
+	Rejected           int `json:"rejected"`
+	RateLimited        int `json:"rate_limited"`
+	InvalidProvider    int `json:"invalid_provider"`
+	ReplayReleased     int `json:"replay_released"`
+	ExpiringWithinHour int `json:"expiring_within_hour"`
+}
+
+type operationsAlert struct {
+	Severity string `json:"severity"`
+	Code     string `json:"code"`
+	Message  string `json:"message"`
+}
+
+type operationsOverviewResponse struct {
+	GeneratedAt          string                     `json:"generated_at"`
+	WorkflowMetrics      *workflowOperationsMetrics `json:"workflow_metrics,omitempty"`
+	WorkflowDeadLetters  deadLetterListResponse     `json:"workflow_dead_letters"`
+	CallbackAuditSummary callbackAuditSummary       `json:"callback_audit_summary"`
+	Alerts               []operationsAlert          `json:"alerts"`
+}
+
+type deadLetterListResponse struct {
+	Count int `json:"count"`
+}
+
 func NewServer(proposals proposalGateway, customers customerGateway, documents documentGateway, workflow workflowGateway, notifications notificationGateway, webhookSecret string, webhookMaxAge time.Duration) http.Handler {
 	return NewServerWithDependencies(
 		proposals,
@@ -260,6 +309,9 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	case r.Method == http.MethodGet && r.URL.Path == "/internal/webhooks/audit":
 		s.listWebhookAudit(w, r, correlationID)
+		return
+	case r.Method == http.MethodGet && r.URL.Path == "/internal/operations/overview":
+		s.getOperationsOverview(w, r, correlationID)
 		return
 	case r.Method == http.MethodPost && r.URL.Path == "/internal/webhooks/audit/cleanup":
 		s.cleanupWebhookAudit(w, r, correlationID)
@@ -740,6 +792,43 @@ func (s *server) listWebhookAudit(w http.ResponseWriter, r *http.Request, correl
 	})
 }
 
+func (s *server) getOperationsOverview(w http.ResponseWriter, r *http.Request, correlationID string) {
+	response := operationsOverviewResponse{
+		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
+		Alerts:      make([]operationsAlert, 0, 4),
+	}
+
+	if s.workflow != nil {
+		var metrics workflowOperationsMetrics
+		if _, err := s.workflow.Get(r.Context(), "/metrics", correlationID, &metrics); err == nil {
+			response.WorkflowMetrics = &metrics
+			response.Alerts = append(response.Alerts, buildWorkflowAlerts(metrics)...)
+		}
+
+		var deadLetters deadLetterListResponse
+		if _, err := s.workflow.Get(r.Context(), "/internal/dlq", correlationID, &deadLetters); err == nil {
+			response.WorkflowDeadLetters = deadLetters
+			if deadLetters.Count > 0 {
+				response.Alerts = append(response.Alerts, operationsAlert{
+					Severity: "critical",
+					Code:     "workflow_dlq_non_empty",
+					Message:  "workflow possui itens na DLQ e requer inspecao operacional",
+				})
+			}
+		}
+	}
+
+	if s.audit != nil {
+		records, err := s.audit.List(r.Context(), WebhookAuditFilter{Limit: 100})
+		if err == nil {
+			response.CallbackAuditSummary = summarizeCallbackAudit(records)
+			response.Alerts = append(response.Alerts, buildCallbackAlerts(response.CallbackAuditSummary)...)
+		}
+	}
+
+	writeJSON(w, http.StatusOK, response)
+}
+
 func (s *server) cleanupWebhookAudit(w http.ResponseWriter, r *http.Request, correlationID string) {
 	processedAt := time.Now().UTC().Format(time.RFC3339)
 	if s.audit == nil {
@@ -1155,4 +1244,100 @@ func firstNonZeroDuration(values ...time.Duration) time.Duration {
 		}
 	}
 	return 0
+}
+
+func summarizeCallbackAudit(records []WebhookAuditRecord) callbackAuditSummary {
+	now := time.Now().UTC()
+	summary := callbackAuditSummary{
+		RecentCount: len(records),
+	}
+
+	for _, record := range records {
+		switch strings.TrimSpace(record.ReplayStatus) {
+		case "processed":
+			summary.Processed++
+		case "duplicate_ignored":
+			summary.DuplicateIgnored++
+		}
+
+		switch strings.TrimSpace(record.ErrorCode) {
+		case "rate_limited":
+			summary.RateLimited++
+		case "invalid_provider":
+			summary.InvalidProvider++
+		}
+
+		if strings.TrimSpace(record.ProcessingStatus) == "rejected" {
+			summary.Rejected++
+		}
+		if strings.TrimSpace(record.LastReplayAction) == "released" {
+			summary.ReplayReleased++
+		}
+		if expiresAt, err := time.Parse(time.RFC3339, record.RetentionExpiresAt); err == nil {
+			if expiresAt.After(now) && expiresAt.Sub(now) <= time.Hour {
+				summary.ExpiringWithinHour++
+			}
+		}
+	}
+
+	return summary
+}
+
+func buildWorkflowAlerts(metrics workflowOperationsMetrics) []operationsAlert {
+	alerts := make([]operationsAlert, 0, 3)
+	if metrics.TotalErrors > 0 {
+		alerts = append(alerts, operationsAlert{
+			Severity: "warning",
+			Code:     "workflow_errors_detected",
+			Message:  "workflow registrou erros e precisa de acompanhamento",
+		})
+	}
+	if metrics.Queue.Retried > 0 {
+		alerts = append(alerts, operationsAlert{
+			Severity: "warning",
+			Code:     "workflow_retries_detected",
+			Message:  "workflow executou retries e pode indicar degradacao externa",
+		})
+	}
+	if metrics.Queue.DLQDepth > 0 {
+		alerts = append(alerts, operationsAlert{
+			Severity: "critical",
+			Code:     "workflow_dlq_depth_positive",
+			Message:  "workflow possui profundidade positiva de DLQ",
+		})
+	}
+	return alerts
+}
+
+func buildCallbackAlerts(summary callbackAuditSummary) []operationsAlert {
+	alerts := make([]operationsAlert, 0, 4)
+	if summary.RateLimited > 0 {
+		alerts = append(alerts, operationsAlert{
+			Severity: "warning",
+			Code:     "callback_rate_limited",
+			Message:  "callbacks recentes foram bloqueados por rate limit",
+		})
+	}
+	if summary.InvalidProvider > 0 {
+		alerts = append(alerts, operationsAlert{
+			Severity: "warning",
+			Code:     "callback_invalid_provider",
+			Message:  "callbacks recentes foram rejeitados por provider fora da allowlist",
+		})
+	}
+	if summary.ExpiringWithinHour > 0 {
+		alerts = append(alerts, operationsAlert{
+			Severity: "info",
+			Code:     "callback_audit_expiring",
+			Message:  "existem registros de auditoria proximos da expiracao operacional",
+		})
+	}
+	if summary.ReplayReleased > 0 {
+		alerts = append(alerts, operationsAlert{
+			Severity: "info",
+			Code:     "callback_manual_replay_release",
+			Message:  "houve liberacoes manuais de replay na amostra recente",
+		})
+	}
+	return alerts
 }

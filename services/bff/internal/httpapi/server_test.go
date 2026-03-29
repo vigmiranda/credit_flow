@@ -68,10 +68,15 @@ func (s stubDocumentGateway) UploadMultipart(ctx context.Context, path, correlat
 
 type stubWorkflowGateway struct {
 	postFunc func(ctx context.Context, path, correlationID string, payload any, out any) (int, error)
+	getFunc  func(ctx context.Context, path, correlationID string, out any) (int, error)
 }
 
 func (s stubWorkflowGateway) Post(ctx context.Context, path, correlationID string, payload any, out any) (int, error) {
 	return s.postFunc(ctx, path, correlationID, payload, out)
+}
+
+func (s stubWorkflowGateway) Get(ctx context.Context, path, correlationID string, out any) (int, error) {
+	return s.getFunc(ctx, path, correlationID, out)
 }
 
 type stubNotificationGateway struct {
@@ -1090,6 +1095,89 @@ func TestWebhookAuditCleanupRemovesExpiredRecords(t *testing.T) {
 	}
 	if len(records) != 1 || records[0].EventID != "evt_live" {
 		t.Fatalf("expected only live record after cleanup, got %+v", records)
+	}
+}
+
+func TestOperationsOverviewAggregatesWorkflowAndAuditSignals(t *testing.T) {
+	auditStore := NewMemoryWebhookAuditStore()
+	if err := auditStore.Upsert(context.Background(), WebhookAuditRecord{
+		EventID:            "evt_rate_limited",
+		CallbackType:       "credit",
+		Provider:           "partner-credit",
+		ProcessingStatus:   "rejected",
+		ErrorCode:          "rate_limited",
+		ReceivedAt:         time.Now().UTC().Add(-5 * time.Minute).Format(time.RFC3339),
+		RetentionExpiresAt: time.Now().UTC().Add(30 * time.Minute).Format(time.RFC3339),
+	}); err != nil {
+		t.Fatalf("seed audit store: %v", err)
+	}
+
+	srv := NewServerWithDependencies(
+		stubProposalGateway{},
+		stubCustomerGateway{},
+		stubDocumentGateway{},
+		stubWorkflowGateway{
+			postFunc: func(context.Context, string, string, any, any) (int, error) { return 0, errors.New("unexpected") },
+			getFunc: func(_ context.Context, path, _ string, out any) (int, error) {
+				switch path {
+				case "/metrics":
+					metrics := out.(*workflowOperationsMetrics)
+					*metrics = workflowOperationsMetrics{
+						Service:       "workflow",
+						TotalRequests: 10,
+						TotalErrors:   2,
+						AverageMS:     120,
+						Queue: workflowQueueView{
+							Enqueued:   5,
+							Processed:  4,
+							Retried:    1,
+							DeadLetter: 1,
+							Depth:      0,
+							DLQDepth:   1,
+						},
+					}
+					return http.StatusOK, nil
+				case "/internal/dlq":
+					payload := out.(*deadLetterListResponse)
+					*payload = deadLetterListResponse{Count: 1}
+					return http.StatusOK, nil
+				default:
+					t.Fatalf("unexpected workflow get path %s", path)
+				}
+				return 0, nil
+			},
+		},
+		stubNotificationGateway{},
+		"",
+		time.Minute,
+		NewMemoryWebhookReplayStore(),
+		auditStore,
+		nil,
+	)
+
+	req := httptest.NewRequest(http.MethodGet, "/internal/operations/overview", nil)
+	resp := httptest.NewRecorder()
+	srv.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, resp.Code)
+	}
+
+	var payload operationsOverviewResponse
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if payload.WorkflowMetrics == nil || payload.WorkflowMetrics.Queue.DLQDepth != 1 {
+		t.Fatal("expected workflow metrics with dlq depth")
+	}
+	if payload.WorkflowDeadLetters.Count != 1 {
+		t.Fatalf("expected 1 dead letter, got %d", payload.WorkflowDeadLetters.Count)
+	}
+	if payload.CallbackAuditSummary.RateLimited != 1 {
+		t.Fatalf("expected rate_limited summary 1, got %d", payload.CallbackAuditSummary.RateLimited)
+	}
+	if len(payload.Alerts) < 3 {
+		t.Fatalf("expected aggregated alerts, got %d", len(payload.Alerts))
 	}
 }
 

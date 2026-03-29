@@ -333,16 +333,22 @@ Objetivo: garantir repetibilidade, confianca e evolucao continua.
 
 ### Ciclo atual
 
-- Identificador: ciclo-19
+- Identificador: ciclo-20
 - Status: aberto
-- Objetivo: consolidar observabilidade e operacao assistida do fluxo
+- Objetivo: fechar readiness operacional e handoff do MVP
 - Itens priorizados:
-  - preparar dashboards e operacao de fila para cenarios de erro mais agressivos
-  - transformar metricas do BFF e workflow em dashboards e alertas acionaveis
-  - expor guias operacionais mais curtos para incidentes do MVP
-  - revisar thresholds de callback, cleanup, DLQ e retry com foco em readiness de ambiente
+  - consolidar checklist final de readiness do ambiente
+  - revisar handoff operacional, bootstrap local e criterios de aceite
+  - endurecer scripts finais de verificacao e operacao
 - Observacao:
-  - ciclo-18 fechou rate limit por rota/parceiro, metricas operacionais ampliadas e playbook de operacao
+  - ciclo-19 fechou overview operacional consolidado, thresholds revisados e scripts de triagem local
+
+## Entregas materializadas no ciclo-19
+
+- `BFF` com `GET /internal/operations/overview` consolidando sinais de callback e DLQ do workflow;
+- script `scripts/ops_overview.ps1` para triagem operacional rapida no ambiente local;
+- documentacao de dashboards e alertas revisada com thresholds acionaveis;
+- backlog reaberto para `ciclo-20` com foco em readiness final, checklist e handoff operacional.
 
 ## Entregas materializadas no ciclo-18
 
@@ -518,3 +524,4 @@ Objetivo: garantir repetibilidade, confianca e evolucao continua.
 | ciclo-16 | concluido | Auditoria persistida dos callbacks e replay-release manual no BFF |
 | ciclo-17 | concluido | Politicas por rota/parceiro, cleanup da auditoria e correlacao dos callbacks com a proposta |
 | ciclo-18 | concluido | Rate limit por rota/parceiro, metricas operacionais ampliadas e playbook de callbacks |
+| ciclo-19 | concluido | Overview operacional consolidado, dashboards revisados e triagem assistida |

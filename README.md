@@ -115,6 +115,7 @@ Pre-requisito:
 - `/metrics` do `BFF` agora inclui contadores de callbacks por tipo, parceiro e status operacional
 - o `BFF` persiste auditoria dos callbacks, correlaciona essa trilha com `GET /api/v1/proposals/{proposalId}` e expoe `GET /internal/webhooks/audit`, `POST /internal/webhooks/audit/{eventId}/replay-release` e `POST /internal/webhooks/audit/cleanup`
 - o `BFF` aplica rate limit por rota e parceiro, com configuracao por `BFF_*_RATE_LIMIT` e `BFF_*_RATE_WINDOW_SECONDS`
+- o `BFF` expoe `GET /internal/operations/overview` para resumir sinais de callback e DLQ do workflow
 
 ## Seguranca minima atual
 
@@ -135,3 +136,4 @@ Pre-requisito:
 - Webhook de antifraude: `POST /api/v1/webhooks/partners/fraud-analysis`
 - Providers permitidos e janela por rota podem ser ajustados por `BFF_ALLOWED_*_PROVIDERS` e `BFF_*_WEBHOOK_MAX_AGE_SECONDS`
 - Playbook operacional: `docs/playbook_callbacks_operacao.md`
+- Snapshot operacional: `powershell -ExecutionPolicy Bypass -File .\\scripts\\ops_overview.ps1`
