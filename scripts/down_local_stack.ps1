@@ -1,3 +1,3 @@
 $ErrorActionPreference = "Stop"
 
-docker compose -f infra/docker/docker-compose.yml down
+docker compose -f infra/docker/docker-compose.yml down --remove-orphans

@@ -333,15 +333,23 @@ Objetivo: garantir repetibilidade, confianca e evolucao continua.
 
 ### Ciclo atual
 
-- Identificador: ciclo-20
+- Identificador: ciclo-21
 - Status: aberto
-- Objetivo: fechar readiness operacional e handoff do MVP
+- Objetivo: formalizar encerramento do MVP e ultimos ajustes residuais
 - Itens priorizados:
-  - consolidar checklist final de readiness do ambiente
-  - revisar handoff operacional, bootstrap local e criterios de aceite
-  - endurecer scripts finais de verificacao e operacao
+  - revisar pendencias residuais apos readiness final
+  - consolidar encerramento formal do backlog do MVP
+  - avaliar polimentos finais de documentacao e operacao
 - Observacao:
-  - ciclo-19 fechou overview operacional consolidado, thresholds revisados e scripts de triagem local
+  - ciclo-20 fechou readiness final, handoff operacional e encadeamento automatizado de validacao
+
+## Entregas materializadas no ciclo-20
+
+- `scripts/release_readiness.ps1` consolidando validacao, smoke e overview operacional;
+- `up_local_stack.ps1` e `down_local_stack.ps1` endurecidos para `compose config` e remocao de orfaos;
+- checklist final em `docs/checklist_readiness_mvp.md`;
+- handoff operacional em `docs/handoff_operacional_mvp.md`;
+- backlog reaberto para `ciclo-21` com foco em encerramento formal e eventual polimento final.
 
 ## Entregas materializadas no ciclo-19
 
@@ -525,3 +533,4 @@ Objetivo: garantir repetibilidade, confianca e evolucao continua.
 | ciclo-17 | concluido | Politicas por rota/parceiro, cleanup da auditoria e correlacao dos callbacks com a proposta |
 | ciclo-18 | concluido | Rate limit por rota/parceiro, metricas operacionais ampliadas e playbook de callbacks |
 | ciclo-19 | concluido | Overview operacional consolidado, dashboards revisados e triagem assistida |
+| ciclo-20 | concluido | Readiness final, handoff operacional e script unico de validacao |

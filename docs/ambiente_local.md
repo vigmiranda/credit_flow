@@ -55,4 +55,5 @@ docker compose -f infra/docker/docker-compose.yml up -d --build
 - o front sobe em modo `oidc` contra o `mock-oidc`, mas pode voltar para `AUTH_MODE=mock` se necessario;
 - `scripts/smoke_docker_stack.ps1` valida a stack Docker ponta a ponta sem precisar subir processos Go manuais;
 - `scripts/ops_overview.ps1` resume alertas, DLQ e sinais recentes de callback para triagem local;
+- `scripts/release_readiness.ps1` encadeia verify, subida da stack, smoke e overview como validacao final;
 - o smoke test isolado segue disponivel em `scripts/smoke_mvp.ps1` para diagnostico fora do compose.

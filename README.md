@@ -137,3 +137,6 @@ Pre-requisito:
 - Providers permitidos e janela por rota podem ser ajustados por `BFF_ALLOWED_*_PROVIDERS` e `BFF_*_WEBHOOK_MAX_AGE_SECONDS`
 - Playbook operacional: `docs/playbook_callbacks_operacao.md`
 - Snapshot operacional: `powershell -ExecutionPolicy Bypass -File .\\scripts\\ops_overview.ps1`
+- Readiness final: `powershell -ExecutionPolicy Bypass -File .\\scripts\\release_readiness.ps1`
+- Checklist de aceite: `docs/checklist_readiness_mvp.md`
+- Handoff operacional: `docs/handoff_operacional_mvp.md`
