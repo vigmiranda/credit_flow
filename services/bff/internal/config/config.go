@@ -26,6 +26,13 @@ type Config struct {
 	StorageProviders       []string
 	CreditProviders        []string
 	FraudProviders         []string
+	WebhookRateLimitPrefix string
+	StorageRateLimit       int
+	CreditRateLimit        int
+	FraudRateLimit         int
+	StorageRateWindow      time.Duration
+	CreditRateWindow       time.Duration
+	FraudRateWindow        time.Duration
 }
 
 func Load() Config {
@@ -50,6 +57,13 @@ func Load() Config {
 		StorageProviders:       getEnvList("BFF_ALLOWED_STORAGE_PROVIDERS"),
 		CreditProviders:        getEnvList("BFF_ALLOWED_CREDIT_PROVIDERS"),
 		FraudProviders:         getEnvList("BFF_ALLOWED_FRAUD_PROVIDERS"),
+		WebhookRateLimitPrefix: getEnv("BFF_WEBHOOK_RATE_LIMIT_PREFIX", "bff:webhook:ratelimit"),
+		StorageRateLimit:       getEnvInt("BFF_STORAGE_RATE_LIMIT", 30),
+		CreditRateLimit:        getEnvInt("BFF_CREDIT_RATE_LIMIT", 30),
+		FraudRateLimit:         getEnvInt("BFF_FRAUD_RATE_LIMIT", 30),
+		StorageRateWindow:      time.Duration(getEnvInt("BFF_STORAGE_RATE_WINDOW_SECONDS", 60)) * time.Second,
+		CreditRateWindow:       time.Duration(getEnvInt("BFF_CREDIT_RATE_WINDOW_SECONDS", 60)) * time.Second,
+		FraudRateWindow:        time.Duration(getEnvInt("BFF_FRAUD_RATE_WINDOW_SECONDS", 60)) * time.Second,
 	}
 }
 

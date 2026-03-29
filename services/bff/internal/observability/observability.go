@@ -12,14 +12,16 @@ import (
 const headerCorrelationID = "X-Correlation-Id"
 
 type Metrics struct {
-	service       string
-	totalRequests atomic.Int64
-	totalErrors   atomic.Int64
-	inflight      atomic.Int64
-	totalDuration atomic.Int64
-	mu            sync.Mutex
-	paths         map[string]int64
-	webhooks      map[string]int64
+	service        string
+	totalRequests  atomic.Int64
+	totalErrors    atomic.Int64
+	inflight       atomic.Int64
+	totalDuration  atomic.Int64
+	mu             sync.Mutex
+	paths          map[string]int64
+	webhooks       map[string]int64
+	cleanupRuns    int64
+	cleanupRemoved int64
 }
 
 func NewMetrics(service string) *Metrics {
@@ -91,27 +93,40 @@ func (m *Metrics) Handler() http.Handler {
 			"average_ms":        avgDuration,
 			"paths":             paths,
 			"webhooks":          webhooks,
+			"webhook_cleanup": map[string]int64{
+				"runs":          m.cleanupRuns,
+				"removed_total": m.cleanupRemoved,
+			},
 		})
 	})
 }
 
-func (m *Metrics) RecordWebhook(callbackType, provider, replayStatus string) {
+func (m *Metrics) RecordWebhook(callbackType, provider, outcome string) {
 	if strings.TrimSpace(callbackType) == "" {
 		callbackType = "unknown"
 	}
 	if strings.TrimSpace(provider) == "" {
 		provider = "unknown"
 	}
-	if strings.TrimSpace(replayStatus) == "" {
-		replayStatus = "unknown"
+	if strings.TrimSpace(outcome) == "" {
+		outcome = "unknown"
 	}
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.webhooks["type:"+callbackType]++
 	m.webhooks["provider:"+provider]++
-	m.webhooks["replay:"+replayStatus]++
+	m.webhooks["outcome:"+outcome]++
 	m.webhooks["type:"+callbackType+"|provider:"+provider]++
+	m.webhooks["type:"+callbackType+"|outcome:"+outcome]++
+	m.webhooks["provider:"+provider+"|outcome:"+outcome]++
+}
+
+func (m *Metrics) RecordWebhookCleanup(removed int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.cleanupRuns++
+	m.cleanupRemoved += int64(removed)
 }
 
 type statusRecorder struct {

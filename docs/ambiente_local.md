@@ -47,6 +47,8 @@ docker compose -f infra/docker/docker-compose.yml up -d --build
 - o `BFF` usa `redis://redis:6379/2` na stack Docker para deduplicacao compartilhada dos webhooks;
 - o `BFF` persiste auditoria em Redis com prefixo `bff:webhook:audit` e retencao configuravel por `BFF_WEBHOOK_AUDIT_RETENTION_SECONDS`;
 - a politica por rota do `BFF` pode ser endurecida com `BFF_ALLOWED_STORAGE_PROVIDERS`, `BFF_ALLOWED_CREDIT_PROVIDERS`, `BFF_ALLOWED_FRAUD_PROVIDERS` e respectivas janelas `BFF_*_WEBHOOK_MAX_AGE_SECONDS`;
+- o rate limit do `BFF` usa o mesmo Redis da stack local com prefixo `bff:webhook:ratelimit`;
+- os limites por rota e parceiro sao configurados por `BFF_*_RATE_LIMIT` e `BFF_*_RATE_WINDOW_SECONDS`;
 - a limpeza operacional da auditoria fica disponivel em `POST http://localhost:18080/internal/webhooks/audit/cleanup`;
 - as notificacoes do `notification service` sao entregues por SMTP local no Mailpit;
 - o front sobe em modo `oidc` contra o `mock-oidc`, mas pode voltar para `AUTH_MODE=mock` se necessario;

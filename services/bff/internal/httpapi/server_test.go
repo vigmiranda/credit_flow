@@ -941,6 +941,7 @@ func TestAnalysisWebhookRejectsProviderOutsidePolicy(t *testing.T) {
 		5*time.Minute,
 		NewMemoryWebhookReplayStore(),
 		auditStore,
+		NewMemoryWebhookRateLimitStore(),
 		nil,
 		WebhookPolicyConfig{
 			AllowedCreditProviders: []string{"partner-credit"},
@@ -964,6 +965,70 @@ func TestAnalysisWebhookRejectsProviderOutsidePolicy(t *testing.T) {
 	}
 	if record.ErrorCode != "invalid_provider" {
 		t.Fatalf("expected invalid_provider audit code, got %s", record.ErrorCode)
+	}
+}
+
+func TestAnalysisWebhookRejectsWhenRateLimitExceeded(t *testing.T) {
+	auditStore := NewMemoryWebhookAuditStore()
+	callCount := 0
+	srv := NewServerWithPolicyConfig(
+		stubProposalGateway{},
+		stubCustomerGateway{},
+		stubDocumentGateway{},
+		stubWorkflowGateway{
+			postFunc: func(_ context.Context, path, _ string, payload any, out any) (int, error) {
+				callCount++
+				response := out.(*map[string]any)
+				*response = map[string]any{"proposal_id": "prop_123"}
+				return http.StatusAccepted, nil
+			},
+		},
+		stubNotificationGateway{},
+		"local-webhook-secret",
+		5*time.Minute,
+		NewMemoryWebhookReplayStore(),
+		auditStore,
+		NewMemoryWebhookRateLimitStore(),
+		nil,
+		WebhookPolicyConfig{
+			CreditRateLimit:        1,
+			CreditRateWindow:       time.Minute,
+			AllowedCreditProviders: []string{"partner-credit"},
+		},
+	)
+
+	send := func(eventID string) *httptest.ResponseRecorder {
+		body := bytes.NewBufferString(`{"proposal_id":"prop_123","provider":"partner-credit","result":"approved"}`)
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/partners/credit-analysis", body)
+		req.Header.Set(headerWebhookSig, testWebhookSignature("local-webhook-secret", body.Bytes()))
+		setWebhookHeaders(req, eventID, time.Now().UTC())
+		resp := httptest.NewRecorder()
+		srv.ServeHTTP(resp, req)
+		return resp
+	}
+
+	first := send("evt_credit_rate_001")
+	second := send("evt_credit_rate_002")
+
+	if first.Code != http.StatusAccepted {
+		t.Fatalf("expected first webhook accepted, got %d", first.Code)
+	}
+	if second.Code != http.StatusTooManyRequests {
+		t.Fatalf("expected second webhook rate limited, got %d", second.Code)
+	}
+	if callCount != 1 {
+		t.Fatalf("expected 1 workflow call before rate limit, got %d", callCount)
+	}
+	if second.Header().Get("Retry-After") == "" {
+		t.Fatal("expected Retry-After header on rate-limited response")
+	}
+
+	record, ok, err := auditStore.Get(context.Background(), "evt_credit_rate_002")
+	if err != nil || !ok {
+		t.Fatalf("expected audit record for rate-limited event, ok=%v err=%v", ok, err)
+	}
+	if record.ErrorCode != "rate_limited" {
+		t.Fatalf("expected rate_limited audit code, got %s", record.ErrorCode)
 	}
 }
 

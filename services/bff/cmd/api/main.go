@@ -26,6 +26,10 @@ func main() {
 	if err != nil || cfg.RedisURL == "" {
 		auditStore = httpapi.NewMemoryWebhookAuditStore()
 	}
+	rateLimitStore, err := httpapi.NewRedisWebhookRateLimitStore(cfg.RedisURL, cfg.WebhookRateLimitPrefix)
+	if err != nil || cfg.RedisURL == "" {
+		rateLimitStore = httpapi.NewMemoryWebhookRateLimitStore()
+	}
 	apiHandler := metrics.Wrap(httpapi.NewServerWithPolicyConfig(
 		backend.NewClient(cfg.ProposalServiceURL),
 		backend.NewClient(cfg.CustomerServiceURL),
@@ -36,11 +40,18 @@ func main() {
 		cfg.WebhookMaxAge,
 		replayStore,
 		auditStore,
+		rateLimitStore,
 		metrics,
 		httpapi.WebhookPolicyConfig{
 			StorageMaxAge:           cfg.StorageWebhookMaxAge,
 			CreditMaxAge:            cfg.CreditWebhookMaxAge,
 			FraudMaxAge:             cfg.FraudWebhookMaxAge,
+			StorageRateLimit:        cfg.StorageRateLimit,
+			CreditRateLimit:         cfg.CreditRateLimit,
+			FraudRateLimit:          cfg.FraudRateLimit,
+			StorageRateWindow:       cfg.StorageRateWindow,
+			CreditRateWindow:        cfg.CreditRateWindow,
+			FraudRateWindow:         cfg.FraudRateWindow,
 			AllowedStorageProviders: cfg.StorageProviders,
 			AllowedCreditProviders:  cfg.CreditProviders,
 			AllowedFraudProviders:   cfg.FraudProviders,

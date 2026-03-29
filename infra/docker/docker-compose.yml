@@ -193,10 +193,17 @@ services:
       BFF_REDIS_URL: redis://redis:6379/2
       BFF_WEBHOOK_REPLAY_PREFIX: bff:webhook:events
       BFF_WEBHOOK_AUDIT_PREFIX: bff:webhook:audit
+      BFF_WEBHOOK_RATE_LIMIT_PREFIX: bff:webhook:ratelimit
       BFF_WEBHOOK_AUDIT_RETENTION_SECONDS: "604800"
       BFF_ALLOWED_STORAGE_PROVIDERS: minio
       BFF_ALLOWED_CREDIT_PROVIDERS: partner-credit
       BFF_ALLOWED_FRAUD_PROVIDERS: partner-fraud
+      BFF_STORAGE_RATE_LIMIT: "30"
+      BFF_CREDIT_RATE_LIMIT: "30"
+      BFF_FRAUD_RATE_LIMIT: "30"
+      BFF_STORAGE_RATE_WINDOW_SECONDS: "60"
+      BFF_CREDIT_RATE_WINDOW_SECONDS: "60"
+      BFF_FRAUD_RATE_WINDOW_SECONDS: "60"
     depends_on:
       proposal:
         condition: service_started

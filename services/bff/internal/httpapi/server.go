@@ -59,6 +59,7 @@ type server struct {
 	policies      map[string]webhookPolicy
 	replay        WebhookReplayStore
 	audit         WebhookAuditStore
+	rateLimit     WebhookRateLimitStore
 	metrics       webhookMetricsRecorder
 }
 
@@ -66,6 +67,12 @@ type WebhookPolicyConfig struct {
 	StorageMaxAge           time.Duration
 	CreditMaxAge            time.Duration
 	FraudMaxAge             time.Duration
+	StorageRateLimit        int
+	CreditRateLimit         int
+	FraudRateLimit          int
+	StorageRateWindow       time.Duration
+	CreditRateWindow        time.Duration
+	FraudRateWindow         time.Duration
 	AllowedStorageProviders []string
 	AllowedCreditProviders  []string
 	AllowedFraudProviders   []string
@@ -73,11 +80,14 @@ type WebhookPolicyConfig struct {
 
 type webhookPolicy struct {
 	maxAge           time.Duration
+	rateLimit        int
+	rateWindow       time.Duration
 	allowedProviders map[string]struct{}
 }
 
 type webhookMetricsRecorder interface {
-	RecordWebhook(callbackType, provider, replayStatus string)
+	RecordWebhook(callbackType, provider, outcome string)
+	RecordWebhookCleanup(removed int)
 }
 
 type healthResponse struct {
@@ -189,17 +199,21 @@ func NewServerWithDependencies(proposals proposalGateway, customers customerGate
 		webhookMaxAge,
 		replayStore,
 		auditStore,
+		NewMemoryWebhookRateLimitStore(),
 		metrics,
 		WebhookPolicyConfig{},
 	)
 }
 
-func NewServerWithPolicyConfig(proposals proposalGateway, customers customerGateway, documents documentGateway, workflow workflowGateway, notifications notificationGateway, webhookSecret string, webhookMaxAge time.Duration, replayStore WebhookReplayStore, auditStore WebhookAuditStore, metrics webhookMetricsRecorder, policyConfig WebhookPolicyConfig) http.Handler {
+func NewServerWithPolicyConfig(proposals proposalGateway, customers customerGateway, documents documentGateway, workflow workflowGateway, notifications notificationGateway, webhookSecret string, webhookMaxAge time.Duration, replayStore WebhookReplayStore, auditStore WebhookAuditStore, rateLimitStore WebhookRateLimitStore, metrics webhookMetricsRecorder, policyConfig WebhookPolicyConfig) http.Handler {
 	if replayStore == nil {
 		replayStore = NewMemoryWebhookReplayStore()
 	}
 	if auditStore == nil {
 		auditStore = NewMemoryWebhookAuditStore()
+	}
+	if rateLimitStore == nil {
+		rateLimitStore = NewMemoryWebhookRateLimitStore()
 	}
 
 	return &server{
@@ -213,6 +227,7 @@ func NewServerWithPolicyConfig(proposals proposalGateway, customers customerGate
 		policies:      newWebhookPolicies(webhookMaxAge, policyConfig),
 		replay:        replayStore,
 		audit:         auditStore,
+		rateLimit:     rateLimitStore,
 		metrics:       metrics,
 	}
 }
@@ -568,6 +583,20 @@ func (s *server) handleStorageDocumentUploaded(w http.ResponseWriter, r *http.Re
 		s.writeWebhookValidationError(w, correlationID, err)
 		return
 	}
+	rateLimit, err := s.applyWebhookRateLimit(r.Context(), "storage", payload.Provider)
+	if err != nil {
+		s.auditWebhook(r.Context(), audit.withPayload(payload.ProposalID, payload.DocumentID, payload.Provider, payload.EventType).failed(validationErrorCode(err), validationErrorMessage(err)))
+		s.recordWebhookMetric("storage", payload.Provider, validationErrorCode(err))
+		s.writeWebhookValidationError(w, correlationID, err)
+		return
+	}
+	s.writeWebhookRateLimitHeaders(w, rateLimit)
+	if !rateLimit.Allowed {
+		s.auditWebhook(r.Context(), audit.withPayload(payload.ProposalID, payload.DocumentID, payload.Provider, payload.EventType).failed(validationErrorCode(errWebhookRateLimited), validationErrorMessage(errWebhookRateLimited)))
+		s.recordWebhookMetric("storage", payload.Provider, validationErrorCode(errWebhookRateLimited))
+		s.writeWebhookRateLimitError(w, correlationID, rateLimit)
+		return
+	}
 
 	var document backend.Document
 	if _, err := s.documents.Post(
@@ -644,6 +673,20 @@ func (s *server) handleAnalysisWebhook(w http.ResponseWriter, r *http.Request, c
 		s.writeWebhookValidationError(w, correlationID, err)
 		return
 	}
+	rateLimit, err := s.applyWebhookRateLimit(r.Context(), analysisType, payload.Provider)
+	if err != nil {
+		s.auditWebhook(r.Context(), audit.withPayload(payload.ProposalID, "", payload.Provider, payload.EventType).failed(validationErrorCode(err), validationErrorMessage(err)))
+		s.recordWebhookMetric(analysisType, payload.Provider, validationErrorCode(err))
+		s.writeWebhookValidationError(w, correlationID, err)
+		return
+	}
+	s.writeWebhookRateLimitHeaders(w, rateLimit)
+	if !rateLimit.Allowed {
+		s.auditWebhook(r.Context(), audit.withPayload(payload.ProposalID, "", payload.Provider, payload.EventType).failed(validationErrorCode(errWebhookRateLimited), validationErrorMessage(errWebhookRateLimited)))
+		s.recordWebhookMetric(analysisType, payload.Provider, validationErrorCode(errWebhookRateLimited))
+		s.writeWebhookRateLimitError(w, correlationID, rateLimit)
+		return
+	}
 
 	var workflowResponse map[string]any
 	if _, err := s.workflow.Post(
@@ -713,6 +756,7 @@ func (s *server) cleanupWebhookAudit(w http.ResponseWriter, r *http.Request, cor
 		writeError(w, http.StatusBadGateway, correlationID, "upstream_error", "falha ao limpar auditoria de webhooks", nil)
 		return
 	}
+	s.recordWebhookCleanupMetric(removed)
 
 	writeJSON(w, http.StatusAccepted, map[string]any{
 		"status":       "accepted",
@@ -930,7 +974,9 @@ var (
 	errStaleWebhookTimestamp     = errorString("stale_timestamp")
 	errMissingWebhookEventID     = errorString("missing_event_id")
 	errWebhookProviderNotAllowed = errorString("invalid_provider")
+	errWebhookRateLimited        = errorString("rate_limited")
 	errInvalidWebhookReplayStore = errorString("replay_store_error")
+	errInvalidWebhookRateStore   = errorString("rate_limit_store_error")
 )
 
 type errorString string
@@ -953,9 +999,28 @@ func (s *server) writeWebhookValidationError(w http.ResponseWriter, correlationI
 		writeError(w, http.StatusUnauthorized, correlationID, "invalid_provider", "provedor do webhook nao permitido para esta rota", nil)
 	case errInvalidWebhookReplayStore:
 		writeError(w, http.StatusBadGateway, correlationID, "upstream_error", "falha ao persistir deduplicacao do webhook", nil)
+	case errInvalidWebhookRateStore:
+		writeError(w, http.StatusBadGateway, correlationID, "upstream_error", "falha ao aplicar rate limit do webhook", nil)
 	default:
 		writeError(w, http.StatusBadRequest, correlationID, "invalid_request", "webhook invalido", nil)
 	}
+}
+
+func (s *server) writeWebhookRateLimitError(w http.ResponseWriter, correlationID string, result WebhookRateLimitResult) {
+	if !result.ResetAt.IsZero() {
+		retryAfter := int(time.Until(result.ResetAt).Seconds())
+		if retryAfter < 1 {
+			retryAfter = 1
+		}
+		w.Header().Set("Retry-After", strconv.Itoa(retryAfter))
+	}
+
+	writeError(w, http.StatusTooManyRequests, correlationID, "rate_limited", "limite de callbacks excedido para a rota e parceiro", map[string]any{
+		"limit":     result.Limit,
+		"count":     result.Count,
+		"remaining": result.Remaining,
+		"reset_at":  result.ResetAt.UTC().Format(time.RFC3339),
+	})
 }
 
 func (s *server) recordWebhookMetric(callbackType, provider, replayStatus string) {
@@ -964,6 +1029,14 @@ func (s *server) recordWebhookMetric(callbackType, provider, replayStatus string
 	}
 
 	s.metrics.RecordWebhook(callbackType, provider, replayStatus)
+}
+
+func (s *server) recordWebhookCleanupMetric(removed int) {
+	if s.metrics == nil {
+		return
+	}
+
+	s.metrics.RecordWebhookCleanup(removed)
 }
 
 func (s *server) auditWebhook(ctx context.Context, record WebhookAuditRecord) {
@@ -991,14 +1064,20 @@ func newWebhookPolicies(defaultMaxAge time.Duration, config WebhookPolicyConfig)
 	return map[string]webhookPolicy{
 		"storage": {
 			maxAge:           firstNonZeroDuration(config.StorageMaxAge, defaultMaxAge),
+			rateLimit:        config.StorageRateLimit,
+			rateWindow:       config.StorageRateWindow,
 			allowedProviders: newProviderSet(config.AllowedStorageProviders),
 		},
 		"credit": {
 			maxAge:           firstNonZeroDuration(config.CreditMaxAge, defaultMaxAge),
+			rateLimit:        config.CreditRateLimit,
+			rateWindow:       config.CreditRateWindow,
 			allowedProviders: newProviderSet(config.AllowedCreditProviders),
 		},
 		"fraud": {
 			maxAge:           firstNonZeroDuration(config.FraudMaxAge, defaultMaxAge),
+			rateLimit:        config.FraudRateLimit,
+			rateWindow:       config.FraudRateWindow,
 			allowedProviders: newProviderSet(config.AllowedFraudProviders),
 		},
 	}
@@ -1020,6 +1099,32 @@ func (s *server) validateWebhookProvider(callbackType, provider string) error {
 		return nil
 	}
 	return errWebhookProviderNotAllowed
+}
+
+func (s *server) applyWebhookRateLimit(ctx context.Context, callbackType, provider string) (WebhookRateLimitResult, error) {
+	policy, ok := s.policies[strings.TrimSpace(callbackType)]
+	if !ok || policy.rateLimit <= 0 || policy.rateWindow <= 0 || s.rateLimit == nil {
+		return WebhookRateLimitResult{Allowed: true}, nil
+	}
+
+	result, err := s.rateLimit.Increment(ctx, callbackType, provider, policy.rateLimit, policy.rateWindow)
+	if err != nil {
+		return WebhookRateLimitResult{}, errInvalidWebhookRateStore
+	}
+
+	return result, nil
+}
+
+func (s *server) writeWebhookRateLimitHeaders(w http.ResponseWriter, result WebhookRateLimitResult) {
+	if result.Limit > 0 {
+		w.Header().Set("X-RateLimit-Limit", strconv.Itoa(result.Limit))
+	}
+	if result.Remaining >= 0 {
+		w.Header().Set("X-RateLimit-Remaining", strconv.Itoa(result.Remaining))
+	}
+	if !result.ResetAt.IsZero() {
+		w.Header().Set("X-RateLimit-Reset", result.ResetAt.UTC().Format(time.RFC3339))
+	}
 }
 
 func newProviderSet(values []string) map[string]struct{} {

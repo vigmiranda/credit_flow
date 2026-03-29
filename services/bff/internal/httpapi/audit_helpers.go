@@ -87,8 +87,12 @@ func validationErrorCode(err error) string {
 		return "stale_webhook"
 	case errWebhookProviderNotAllowed:
 		return "invalid_provider"
+	case errWebhookRateLimited:
+		return "rate_limited"
 	case errInvalidWebhookReplayStore:
 		return "replay_store_error"
+	case errInvalidWebhookRateStore:
+		return "rate_limit_store_error"
 	default:
 		return "invalid_request"
 	}
@@ -106,8 +110,12 @@ func validationErrorMessage(err error) string {
 		return "timestamp do webhook fora da janela aceita"
 	case errWebhookProviderNotAllowed:
 		return "provedor do webhook nao permitido para esta rota"
+	case errWebhookRateLimited:
+		return "limite de callbacks excedido para a rota e parceiro"
 	case errInvalidWebhookReplayStore:
 		return "falha ao persistir deduplicacao do webhook"
+	case errInvalidWebhookRateStore:
+		return "falha ao aplicar rate limit do webhook"
 	default:
 		return "webhook invalido"
 	}

@@ -333,16 +333,24 @@ Objetivo: garantir repetibilidade, confianca e evolucao continua.
 
 ### Ciclo atual
 
-- Identificador: ciclo-18
+- Identificador: ciclo-19
 - Status: aberto
-- Objetivo: endurecer operacao dos callbacks e ampliar observabilidade operacional
+- Objetivo: consolidar observabilidade e operacao assistida do fluxo
 - Itens priorizados:
   - preparar dashboards e operacao de fila para cenarios de erro mais agressivos
-  - implementar rate limit para callbacks por rota e por parceiro
-  - ampliar metricas operacionais de callback, cleanup e rejeicoes por politica
-  - consolidar playbook operacional para DLQ, replay e limpeza de auditoria
+  - transformar metricas do BFF e workflow em dashboards e alertas acionaveis
+  - expor guias operacionais mais curtos para incidentes do MVP
+  - revisar thresholds de callback, cleanup, DLQ e retry com foco em readiness de ambiente
 - Observacao:
-  - ciclo-17 fechou correlacao da auditoria com a proposta consolidada, limpeza operacional e politicas por rota/parceiro
+  - ciclo-18 fechou rate limit por rota/parceiro, metricas operacionais ampliadas e playbook de operacao
+
+## Entregas materializadas no ciclo-18
+
+- `BFF` com rate limit por rota e parceiro, usando Redis quando disponivel e fallback em memoria;
+- respostas `429` com `Retry-After` e headers `X-RateLimit-*` para bursts de callbacks;
+- metricas do `BFF` ampliadas com `outcome:*`, cruzamentos por tipo/parceiro e contadores de `webhook_cleanup`;
+- documentacao operacional consolidada em `docs/playbook_callbacks_operacao.md`;
+- backlog reaberto para `ciclo-19` com foco em dashboards, alertas e operacao assistida.
 
 ## Entregas materializadas no ciclo-17
 
@@ -509,3 +517,4 @@ Objetivo: garantir repetibilidade, confianca e evolucao continua.
 | ciclo-15 | concluido | Deduplicacao compartilhada em Redis no BFF e metricas de callbacks por parceiro |
 | ciclo-16 | concluido | Auditoria persistida dos callbacks e replay-release manual no BFF |
 | ciclo-17 | concluido | Politicas por rota/parceiro, cleanup da auditoria e correlacao dos callbacks com a proposta |
+| ciclo-18 | concluido | Rate limit por rota/parceiro, metricas operacionais ampliadas e playbook de callbacks |
