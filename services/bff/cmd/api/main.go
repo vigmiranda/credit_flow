@@ -25,6 +25,7 @@ func main() {
 		backend.NewClient(cfg.WorkflowServiceURL),
 		backend.NewClient(cfg.NotificationServiceURL),
 		cfg.WebhookSecret,
+		cfg.WebhookMaxAge,
 	))
 
 	mux := http.NewServeMux()

@@ -1,6 +1,10 @@
 package config
 
-import "os"
+import (
+	"os"
+	"strconv"
+	"time"
+)
 
 type Config struct {
 	Port                   string
@@ -10,6 +14,7 @@ type Config struct {
 	WorkflowServiceURL     string
 	NotificationServiceURL string
 	WebhookSecret          string
+	WebhookMaxAge          time.Duration
 }
 
 func Load() Config {
@@ -21,6 +26,7 @@ func Load() Config {
 		WorkflowServiceURL:     getEnv("WORKFLOW_SERVICE_URL", "http://localhost:8084"),
 		NotificationServiceURL: getEnv("NOTIFICATION_SERVICE_URL", "http://localhost:8087"),
 		WebhookSecret:          getEnv("BFF_WEBHOOK_SECRET", ""),
+		WebhookMaxAge:          time.Duration(getEnvInt("BFF_WEBHOOK_MAX_AGE_SECONDS", 300)) * time.Second,
 	}
 }
 
@@ -30,4 +36,18 @@ func getEnv(key, fallback string) string {
 	}
 
 	return fallback
+}
+
+func getEnvInt(key string, fallback int) int {
+	value := os.Getenv(key)
+	if value == "" {
+		return fallback
+	}
+
+	parsed, err := strconv.Atoi(value)
+	if err != nil {
+		return fallback
+	}
+
+	return parsed
 }

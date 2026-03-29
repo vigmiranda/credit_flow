@@ -192,6 +192,7 @@ func TestGetProposalAggregatesCustomerAndDocuments(t *testing.T) {
 			postFunc: func(context.Context, string, string, any, any) (int, error) { return 0, errors.New("unexpected") },
 		},
 		"",
+		time.Minute,
 	)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/proposals/prop_123", nil)
@@ -293,6 +294,7 @@ func TestUpsertCustomerUpdatesProposalStatus(t *testing.T) {
 			getFunc: func(context.Context, string, string, any) (int, error) { return 0, errors.New("unexpected") },
 		},
 		"",
+		time.Minute,
 	)
 
 	body := bytes.NewBufferString(`{"full_name":"Maria Silva","cpf":"12345678901","birth_date":"1990-01-01","email":"maria@example.com","phone":"11999999999","monthly_income":5000}`)
@@ -371,6 +373,7 @@ func TestMarkDocumentReceivedTriggersWorkflow(t *testing.T) {
 			getFunc: func(context.Context, string, string, any) (int, error) { return 0, errors.New("unexpected") },
 		},
 		"",
+		time.Minute,
 	)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/proposals/prop_123/documents/doc_123/received", nil)
@@ -455,6 +458,7 @@ func TestUploadDocumentContentTriggersWorkflow(t *testing.T) {
 			getFunc: func(context.Context, string, string, any) (int, error) { return 0, errors.New("unexpected") },
 		},
 		"",
+		time.Minute,
 	)
 
 	body := &bytes.Buffer{}
@@ -550,11 +554,13 @@ func TestStorageWebhookTriggersWorkflow(t *testing.T) {
 			getFunc: func(context.Context, string, string, any) (int, error) { return 0, errors.New("unexpected") },
 		},
 		secret,
+		time.Minute,
 	)
 
 	body := bytes.NewBufferString(`{"proposal_id":"prop_123","document_id":"doc_123","provider":"minio","event_type":"object_created"}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/storage/document-uploaded", body)
 	req.Header.Set(headerWebhookSig, testWebhookSignature(secret, body.Bytes()))
+	setWebhookHeaders(req, "evt_storage_001", time.Now().UTC())
 	resp := httptest.NewRecorder()
 	srv.ServeHTTP(resp, req)
 
@@ -580,11 +586,126 @@ func TestStorageWebhookRejectsInvalidSignature(t *testing.T) {
 		stubWorkflowGateway{},
 		stubNotificationGateway{},
 		"local-webhook-secret",
+		time.Minute,
 	)
 
 	body := bytes.NewBufferString(`{"proposal_id":"prop_123","document_id":"doc_123"}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/storage/document-uploaded", body)
 	req.Header.Set(headerWebhookSig, "sha256=deadbeef")
+	setWebhookHeaders(req, "evt_storage_001", time.Now().UTC())
+	resp := httptest.NewRecorder()
+	srv.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status %d, got %d", http.StatusUnauthorized, resp.Code)
+	}
+}
+
+func TestAnalysisWebhookTriggersWorkflowExternalCallback(t *testing.T) {
+	srv := NewServer(
+		stubProposalGateway{},
+		stubCustomerGateway{},
+		stubDocumentGateway{},
+		stubWorkflowGateway{
+			postFunc: func(_ context.Context, path, _ string, payload any, out any) (int, error) {
+				if path != "/internal/proposals/prop_123/external-analyses/credit" {
+					t.Fatalf("unexpected workflow path %s", path)
+				}
+				body := payload.(map[string]any)
+				if body["result"] != "approved" {
+					t.Fatalf("unexpected result %v", body["result"])
+				}
+				response := out.(*map[string]any)
+				*response = map[string]any{
+					"proposal_id":     "prop_123",
+					"analysis_type":   "credit",
+					"proposal_status": "fraud_analysis_in_progress",
+				}
+				return http.StatusAccepted, nil
+			},
+		},
+		stubNotificationGateway{},
+		"local-webhook-secret",
+		5*time.Minute,
+	)
+
+	body := bytes.NewBufferString(`{"proposal_id":"prop_123","provider":"partner-credit","result":"approved","score":710}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/partners/credit-analysis", body)
+	req.Header.Set(headerWebhookSig, testWebhookSignature("local-webhook-secret", body.Bytes()))
+	setWebhookHeaders(req, "evt_credit_001", time.Now().UTC())
+	resp := httptest.NewRecorder()
+	srv.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusAccepted {
+		t.Fatalf("expected status %d, got %d", http.StatusAccepted, resp.Code)
+	}
+
+	var response map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if response["replay_status"] != "processed" {
+		t.Fatalf("expected replay_status processed, got %v", response["replay_status"])
+	}
+}
+
+func TestAnalysisWebhookIgnoresReplay(t *testing.T) {
+	callCount := 0
+	srv := NewServer(
+		stubProposalGateway{},
+		stubCustomerGateway{},
+		stubDocumentGateway{},
+		stubWorkflowGateway{
+			postFunc: func(_ context.Context, path, _ string, payload any, out any) (int, error) {
+				callCount++
+				response := out.(*map[string]any)
+				*response = map[string]any{
+					"proposal_id": "prop_123",
+				}
+				return http.StatusAccepted, nil
+			},
+		},
+		stubNotificationGateway{},
+		"local-webhook-secret",
+		5*time.Minute,
+	)
+
+	send := func() *httptest.ResponseRecorder {
+		body := bytes.NewBufferString(`{"proposal_id":"prop_123","provider":"partner-credit","result":"approved"}`)
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/partners/credit-analysis", body)
+		req.Header.Set(headerWebhookSig, testWebhookSignature("local-webhook-secret", body.Bytes()))
+		setWebhookHeaders(req, "evt_credit_001", time.Now().UTC())
+		resp := httptest.NewRecorder()
+		srv.ServeHTTP(resp, req)
+		return resp
+	}
+
+	first := send()
+	second := send()
+
+	if first.Code != http.StatusAccepted || second.Code != http.StatusAccepted {
+		t.Fatalf("expected accepted responses, got %d and %d", first.Code, second.Code)
+	}
+	if callCount != 1 {
+		t.Fatalf("expected a single workflow call, got %d", callCount)
+	}
+}
+
+func TestAnalysisWebhookRejectsStaleTimestamp(t *testing.T) {
+	srv := NewServer(
+		stubProposalGateway{},
+		stubCustomerGateway{},
+		stubDocumentGateway{},
+		stubWorkflowGateway{},
+		stubNotificationGateway{},
+		"local-webhook-secret",
+		5*time.Minute,
+	)
+
+	body := bytes.NewBufferString(`{"proposal_id":"prop_123","provider":"partner-credit","result":"approved"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/partners/credit-analysis", body)
+	req.Header.Set(headerWebhookSig, testWebhookSignature("local-webhook-secret", body.Bytes()))
+	setWebhookHeaders(req, "evt_credit_001", time.Now().UTC().Add(-10*time.Minute))
 	resp := httptest.NewRecorder()
 	srv.ServeHTTP(resp, req)
 
@@ -597,4 +718,9 @@ func testWebhookSignature(secret string, body []byte) string {
 	mac := hmac.New(sha256.New, []byte(secret))
 	_, _ = mac.Write(body)
 	return "sha256=" + hex.EncodeToString(mac.Sum(nil))
+}
+
+func setWebhookHeaders(req *http.Request, eventID string, timestamp time.Time) {
+	req.Header.Set(headerWebhookEvent, eventID)
+	req.Header.Set(headerWebhookTime, timestamp.Format(time.RFC3339))
 }

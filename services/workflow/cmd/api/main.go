@@ -42,6 +42,8 @@ func main() {
 		cfg.AnalysisDelay,
 		cfg.MaxRetries,
 		metrics,
+		cfg.ExternalCreditCallbacks,
+		cfg.ExternalFraudCallbacks,
 	)
 	apiHandler := metrics.Wrap(serverHandler)
 	mux := http.NewServeMux()

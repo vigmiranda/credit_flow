@@ -28,6 +28,7 @@ Descrever o fluxo implementado para a simulacao das analises de documento, credi
 20. se houver falha tecnica, o worker reaplica o job ate o limite configurado e depois direciona a proposta para `manual_review`;
 21. notificacoes sao registradas ao longo do fluxo sem bloquear a proposta e enviadas por SMTP local.
 22. callbacks externos podem marcar documentos via webhook autenticado no BFF quando houver upload concluido fora da jornada sincrona do front.
+23. quando `WORKFLOW_EXTERNAL_CREDIT_CALLBACKS` ou `WORKFLOW_EXTERNAL_FRAUD_CALLBACKS` estiverem ativos, o workflow pausa na etapa correspondente e aguarda o callback do parceiro.
 
 ## Regras de consolidacao
 
@@ -59,6 +60,7 @@ Descrever o fluxo implementado para a simulacao das analises de documento, credi
 - a DLQ pode ser inspecionada e reprocessada por endpoints internos do `workflow service`;
 - o upload de documento passa por `BFF -> Document Service -> MinIO`;
 - o BFF expoe um webhook inicial em `/api/v1/webhooks/storage/document-uploaded` com assinatura HMAC em `X-Webhook-Signature`;
+- o BFF tambem expoe `/api/v1/webhooks/partners/credit-analysis` e `/api/v1/webhooks/partners/fraud-analysis` com `X-Webhook-Event-Id` e `X-Webhook-Timestamp` para anti-replay;
 - os resultados ficam persistidos no `proposal service`;
 - as notificacoes ficam persistidas no `notification service` e sao enviadas para o Mailpit no ambiente local;
 - o front le a proposta consolidada com cliente, documentos e resultados das analises;

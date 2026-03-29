@@ -43,6 +43,7 @@ docker compose -f infra/docker/docker-compose.yml up -d --build
 - o `workflow service` usa Redis como fila de processamento e reaplica retries configuraveis;
 - o `workflow service` registra DLQ e profundidade da fila em `/metrics`;
 - a inspecao da DLQ fica disponivel em `GET http://localhost:18084/internal/dlq` e o reprocessamento em `POST http://localhost:18084/internal/dlq/reprocess`;
+- os callbacks externos podem ser ligados por `WORKFLOW_EXTERNAL_CREDIT_CALLBACKS=true` e `WORKFLOW_EXTERNAL_FRAUD_CALLBACKS=true`;
 - as notificacoes do `notification service` sao entregues por SMTP local no Mailpit;
 - o front sobe em modo `oidc` contra o `mock-oidc`, mas pode voltar para `AUTH_MODE=mock` se necessario;
 - `scripts/smoke_docker_stack.ps1` valida a stack Docker ponta a ponta sem precisar subir processos Go manuais;

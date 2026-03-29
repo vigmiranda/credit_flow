@@ -17,6 +17,8 @@ import (
 const (
 	headerCorrelationID = "X-Correlation-Id"
 	headerWebhookSig    = "X-Webhook-Signature"
+	headerWebhookEvent  = "X-Webhook-Event-Id"
+	headerWebhookTime   = "X-Webhook-Timestamp"
 )
 
 type proposalGateway interface {
@@ -52,6 +54,8 @@ type server struct {
 	workflow      workflowGateway
 	notifications notificationGateway
 	webhookSecret string
+	webhookMaxAge time.Duration
+	replay        *webhookReplayProtector
 }
 
 type healthResponse struct {
@@ -126,7 +130,17 @@ type storageWebhookRequest struct {
 	OccurredAt string `json:"occurred_at,omitempty"`
 }
 
-func NewServer(proposals proposalGateway, customers customerGateway, documents documentGateway, workflow workflowGateway, notifications notificationGateway, webhookSecret string) http.Handler {
+type analysisWebhookRequest struct {
+	ProposalID string `json:"proposal_id"`
+	Provider   string `json:"provider,omitempty"`
+	EventType  string `json:"event_type,omitempty"`
+	OccurredAt string `json:"occurred_at,omitempty"`
+	Result     string `json:"result"`
+	Score      int    `json:"score,omitempty"`
+	Reason     string `json:"reason,omitempty"`
+}
+
+func NewServer(proposals proposalGateway, customers customerGateway, documents documentGateway, workflow workflowGateway, notifications notificationGateway, webhookSecret string, webhookMaxAge time.Duration) http.Handler {
 	return &server{
 		proposals:     proposals,
 		customers:     customers,
@@ -134,6 +148,8 @@ func NewServer(proposals proposalGateway, customers customerGateway, documents d
 		workflow:      workflow,
 		notifications: notifications,
 		webhookSecret: webhookSecret,
+		webhookMaxAge: webhookMaxAge,
+		replay:        newWebhookReplayProtector(),
 	}
 }
 
@@ -156,6 +172,12 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	case r.Method == http.MethodPost && r.URL.Path == "/api/v1/webhooks/storage/document-uploaded":
 		s.handleStorageDocumentUploaded(w, r, correlationID)
+		return
+	case r.Method == http.MethodPost && r.URL.Path == "/api/v1/webhooks/partners/credit-analysis":
+		s.handleAnalysisWebhook(w, r, correlationID, "credit")
+		return
+	case r.Method == http.MethodPost && r.URL.Path == "/api/v1/webhooks/partners/fraud-analysis":
+		s.handleAnalysisWebhook(w, r, correlationID, "fraud")
 		return
 	case strings.HasPrefix(r.URL.Path, "/api/v1/proposals/"):
 		s.handleProposalRoutes(w, r, correlationID)
@@ -425,10 +447,22 @@ func (s *server) handleStorageDocumentUploaded(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	if !verifyWebhookSignature(s.webhookSecret, rawBody, r.Header.Get(headerWebhookSig)) {
-		writeError(w, http.StatusUnauthorized, correlationID, "invalid_signature", "assinatura do webhook invalida", nil)
+	replayStatus, release, err := s.validateWebhookRequest(r, rawBody)
+	if err != nil {
+		s.writeWebhookValidationError(w, correlationID, err)
 		return
 	}
+	if replayStatus == "duplicate_ignored" {
+		writeJSON(w, http.StatusAccepted, map[string]any{
+			"status":        "accepted",
+			"replay_status": replayStatus,
+		})
+		return
+	}
+	processed := false
+	defer func() {
+		release(processed)
+	}()
 
 	var payload storageWebhookRequest
 	if err := json.Unmarshal(rawBody, &payload); err != nil {
@@ -457,14 +491,78 @@ func (s *server) handleStorageDocumentUploaded(w http.ResponseWriter, r *http.Re
 
 	var proposal backend.Proposal
 	s.completeDocumentFlow(r.Context(), payload.ProposalID, correlationID, &proposal)
+	processed = true
 
 	writeJSON(w, http.StatusAccepted, map[string]any{
-		"status":      "accepted",
-		"proposal_id": payload.ProposalID,
-		"document_id": payload.DocumentID,
-		"provider":    payload.Provider,
-		"event_type":  payload.EventType,
+		"status":        "accepted",
+		"replay_status": replayStatus,
+		"proposal_id":   payload.ProposalID,
+		"document_id":   payload.DocumentID,
+		"provider":      payload.Provider,
+		"event_type":    payload.EventType,
 	})
+}
+
+func (s *server) handleAnalysisWebhook(w http.ResponseWriter, r *http.Request, correlationID, analysisType string) {
+	rawBody, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, correlationID, "invalid_request", "payload invalido", nil)
+		return
+	}
+
+	replayStatus, release, err := s.validateWebhookRequest(r, rawBody)
+	if err != nil {
+		s.writeWebhookValidationError(w, correlationID, err)
+		return
+	}
+	if replayStatus == "duplicate_ignored" {
+		writeJSON(w, http.StatusAccepted, map[string]any{
+			"status":        "accepted",
+			"analysis_type": analysisType,
+			"replay_status": replayStatus,
+		})
+		return
+	}
+	processed := false
+	defer func() {
+		release(processed)
+	}()
+
+	var payload analysisWebhookRequest
+	if err := json.Unmarshal(rawBody, &payload); err != nil {
+		writeError(w, http.StatusBadRequest, correlationID, "invalid_request", "payload invalido", nil)
+		return
+	}
+	if strings.TrimSpace(payload.ProposalID) == "" || strings.TrimSpace(payload.Result) == "" {
+		writeError(w, http.StatusBadRequest, correlationID, "invalid_request", "campos obrigatorios ausentes", map[string]any{
+			"required_fields": []string{"proposal_id", "result"},
+		})
+		return
+	}
+
+	var workflowResponse map[string]any
+	if _, err := s.workflow.Post(
+		r.Context(),
+		"/internal/proposals/"+payload.ProposalID+"/external-analyses/"+analysisType,
+		correlationID,
+		map[string]any{
+			"provider":    payload.Provider,
+			"event_type":  payload.EventType,
+			"occurred_at": payload.OccurredAt,
+			"result":      payload.Result,
+			"score":       payload.Score,
+			"reason":      payload.Reason,
+		},
+		&workflowResponse,
+	); err != nil {
+		writeError(w, http.StatusBadGateway, correlationID, "upstream_error", "falha ao aplicar callback externo de analise", nil)
+		return
+	}
+	processed = true
+
+	workflowResponse["status"] = "accepted"
+	workflowResponse["replay_status"] = replayStatus
+	writeJSON(w, http.StatusAccepted, workflowResponse)
 }
 
 func (s *server) triggerWorkflow(proposalID, correlationID string) {
@@ -574,4 +672,85 @@ func verifyWebhookSignature(secret string, body []byte, provided string) bool {
 	expected := mac.Sum(nil)
 
 	return hmac.Equal(decoded, expected)
+}
+
+func (s *server) validateWebhookRequest(r *http.Request, body []byte) (string, func(bool), error) {
+	if !verifyWebhookSignature(s.webhookSecret, body, r.Header.Get(headerWebhookSig)) {
+		return "", nil, errInvalidWebhookSignature
+	}
+
+	eventID := strings.TrimSpace(r.Header.Get(headerWebhookEvent))
+	if eventID == "" {
+		return "", nil, errMissingWebhookEventID
+	}
+
+	timestamp, err := parseWebhookTimestamp(r.Header.Get(headerWebhookTime))
+	if err != nil {
+		return "", nil, errInvalidWebhookTimestamp
+	}
+
+	if s.webhookMaxAge > 0 {
+		now := time.Now().UTC()
+		if timestamp.After(now.Add(30*time.Second)) || now.Sub(timestamp) > s.webhookMaxAge {
+			return "", nil, errStaleWebhookTimestamp
+		}
+	}
+
+	expiresAt := timestamp.Add(s.webhookMaxAge)
+	if s.webhookMaxAge <= 0 {
+		expiresAt = time.Now().UTC().Add(5 * time.Minute)
+	}
+	if s.replay.Mark(eventID, expiresAt) {
+		return "duplicate_ignored", func(bool) {}, nil
+	}
+
+	return "processed", func(success bool) {
+		if !success {
+			s.replay.Release(eventID)
+		}
+	}, nil
+}
+
+func parseWebhookTimestamp(value string) (time.Time, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return time.Time{}, errInvalidWebhookTimestamp
+	}
+
+	if parsed, err := time.Parse(time.RFC3339, trimmed); err == nil {
+		return parsed.UTC(), nil
+	}
+	if parsed, err := time.Parse(time.RFC3339Nano, trimmed); err == nil {
+		return parsed.UTC(), nil
+	}
+
+	return time.Time{}, errInvalidWebhookTimestamp
+}
+
+var (
+	errInvalidWebhookSignature = errorString("invalid_signature")
+	errInvalidWebhookTimestamp = errorString("invalid_timestamp")
+	errStaleWebhookTimestamp   = errorString("stale_timestamp")
+	errMissingWebhookEventID   = errorString("missing_event_id")
+)
+
+type errorString string
+
+func (e errorString) Error() string {
+	return string(e)
+}
+
+func (s *server) writeWebhookValidationError(w http.ResponseWriter, correlationID string, err error) {
+	switch err {
+	case errInvalidWebhookSignature:
+		writeError(w, http.StatusUnauthorized, correlationID, "invalid_signature", "assinatura do webhook invalida", nil)
+	case errMissingWebhookEventID:
+		writeError(w, http.StatusBadRequest, correlationID, "invalid_request", "header X-Webhook-Event-Id obrigatorio", nil)
+	case errInvalidWebhookTimestamp:
+		writeError(w, http.StatusBadRequest, correlationID, "invalid_request", "header X-Webhook-Timestamp invalido", nil)
+	case errStaleWebhookTimestamp:
+		writeError(w, http.StatusUnauthorized, correlationID, "stale_webhook", "timestamp do webhook fora da janela aceita", nil)
+	default:
+		writeError(w, http.StatusBadRequest, correlationID, "invalid_request", "webhook invalido", nil)
+	}
 }

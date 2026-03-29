@@ -20,6 +20,8 @@ type Config struct {
 	MaxRetries               int
 	QueuePollTimeout         time.Duration
 	AnalysisDelay            time.Duration
+	ExternalCreditCallbacks  bool
+	ExternalFraudCallbacks   bool
 }
 
 func Load() Config {
@@ -37,6 +39,8 @@ func Load() Config {
 		MaxRetries:               getEnvInt("WORKFLOW_MAX_RETRIES", 2),
 		QueuePollTimeout:         time.Duration(getEnvInt("WORKFLOW_QUEUE_POLL_TIMEOUT_MS", 1000)) * time.Millisecond,
 		AnalysisDelay:            time.Duration(getEnvInt("WORKFLOW_ANALYSIS_DELAY_MS", 250)) * time.Millisecond,
+		ExternalCreditCallbacks:  getEnvBool("WORKFLOW_EXTERNAL_CREDIT_CALLBACKS", false),
+		ExternalFraudCallbacks:   getEnvBool("WORKFLOW_EXTERNAL_FRAUD_CALLBACKS", false),
 	}
 }
 
@@ -54,6 +58,19 @@ func getEnvInt(key string, fallback int) int {
 	}
 
 	parsed, err := strconv.Atoi(value)
+	if err != nil {
+		return fallback
+	}
+	return parsed
+}
+
+func getEnvBool(key string, fallback bool) bool {
+	value := os.Getenv(key)
+	if value == "" {
+		return fallback
+	}
+
+	parsed, err := strconv.ParseBool(value)
 	if err != nil {
 		return fallback
 	}

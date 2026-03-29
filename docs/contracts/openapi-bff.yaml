@@ -183,6 +183,8 @@ paths:
       parameters:
         - $ref: "#/components/parameters/CorrelationId"
         - $ref: "#/components/parameters/WebhookSignature"
+        - $ref: "#/components/parameters/WebhookEventId"
+        - $ref: "#/components/parameters/WebhookTimestamp"
       requestBody:
         required: true
         content:
@@ -196,6 +198,58 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AcceptedWebhookResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+  /api/v1/webhooks/partners/credit-analysis:
+    post:
+      summary: Receber callback externo de analise de credito
+      operationId: handlePartnerCreditWebhook
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+        - $ref: "#/components/parameters/WebhookSignature"
+        - $ref: "#/components/parameters/WebhookEventId"
+        - $ref: "#/components/parameters/WebhookTimestamp"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AnalysisWebhookRequest"
+      responses:
+        "202":
+          description: Callback aceito e encaminhado ao workflow
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AcceptedAnalysisWebhookResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+  /api/v1/webhooks/partners/fraud-analysis:
+    post:
+      summary: Receber callback externo de analise antifraude
+      operationId: handlePartnerFraudWebhook
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+        - $ref: "#/components/parameters/WebhookSignature"
+        - $ref: "#/components/parameters/WebhookEventId"
+        - $ref: "#/components/parameters/WebhookTimestamp"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AnalysisWebhookRequest"
+      responses:
+        "202":
+          description: Callback aceito e encaminhado ao workflow
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AcceptedAnalysisWebhookResponse"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "400":
@@ -233,6 +287,21 @@ components:
       schema:
         type: string
         example: sha256=20ce4ff725f3f2c5ef0b5980d1f2ff97f8ed6ec1cdd3e8a4d9d2c6fa8c579db1
+    WebhookEventId:
+      name: X-Webhook-Event-Id
+      in: header
+      required: false
+      schema:
+        type: string
+        example: evt_credit_001
+    WebhookTimestamp:
+      name: X-Webhook-Timestamp
+      in: header
+      required: false
+      schema:
+        type: string
+        format: date-time
+        example: 2026-03-29T12:00:00Z
   responses:
     BadRequest:
       description: Requisicao invalida
@@ -531,6 +600,26 @@ components:
         occurred_at:
           type: string
           format: date-time
+    AnalysisWebhookRequest:
+      type: object
+      required: [proposal_id, result]
+      properties:
+        proposal_id:
+          type: string
+        provider:
+          type: string
+        event_type:
+          type: string
+        occurred_at:
+          type: string
+          format: date-time
+        result:
+          type: string
+          enum: [approved, manual_review, rejected]
+        score:
+          type: integer
+        reason:
+          type: string
     AcceptedWebhookResponse:
       type: object
       required: [status, proposal_id, document_id]
@@ -545,4 +634,23 @@ components:
         provider:
           type: string
         event_type:
+          type: string
+    AcceptedAnalysisWebhookResponse:
+      type: object
+      required: [status, proposal_id, analysis_type, proposal_status]
+      properties:
+        status:
+          type: string
+          example: accepted
+        replay_status:
+          type: string
+          example: processed
+        proposal_id:
+          type: string
+        analysis_type:
+          type: string
+          enum: [credit, fraud]
+        result:
+          type: string
+        proposal_status:
           type: string

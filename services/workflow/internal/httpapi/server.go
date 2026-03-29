@@ -22,16 +22,18 @@ type gateway interface {
 }
 
 type server struct {
-	proposals     gateway
-	customers     gateway
-	documents     gateway
-	credit        gateway
-	fraud         gateway
-	notifications gateway
-	queue         queue.Queue
-	delay         time.Duration
-	maxRetries    int
-	metrics       queueMetrics
+	proposals      gateway
+	customers      gateway
+	documents      gateway
+	credit         gateway
+	fraud          gateway
+	notifications  gateway
+	queue          queue.Queue
+	delay          time.Duration
+	maxRetries     int
+	metrics        queueMetrics
+	externalCredit bool
+	externalFraud  bool
 }
 
 type queueMetrics interface {
@@ -66,6 +68,23 @@ type reprocessDLQResponse struct {
 	ReprocessedCount int    `json:"reprocessed_count"`
 }
 
+type externalAnalysisRequest struct {
+	Provider   string `json:"provider"`
+	EventType  string `json:"event_type,omitempty"`
+	OccurredAt string `json:"occurred_at,omitempty"`
+	Result     string `json:"result"`
+	Score      int    `json:"score,omitempty"`
+	Reason     string `json:"reason,omitempty"`
+}
+
+type externalAnalysisResponse struct {
+	Status         string `json:"status"`
+	ProposalID     string `json:"proposal_id"`
+	AnalysisType   string `json:"analysis_type"`
+	Result         string `json:"result"`
+	ProposalStatus string `json:"proposal_status"`
+}
+
 type errorResponse struct {
 	Code          string         `json:"code"`
 	Message       string         `json:"message"`
@@ -73,22 +92,24 @@ type errorResponse struct {
 	Details       map[string]any `json:"details,omitempty"`
 }
 
-func NewServer(proposals gateway, customers gateway, documents gateway, credit gateway, fraud gateway, notifications gateway, workflowQueue queue.Queue, delay time.Duration, maxRetries int, metrics queueMetrics) *server {
+func NewServer(proposals gateway, customers gateway, documents gateway, credit gateway, fraud gateway, notifications gateway, workflowQueue queue.Queue, delay time.Duration, maxRetries int, metrics queueMetrics, externalCredit bool, externalFraud bool) *server {
 	if maxRetries < 0 {
 		maxRetries = 0
 	}
 
 	return &server{
-		proposals:     proposals,
-		customers:     customers,
-		documents:     documents,
-		credit:        credit,
-		fraud:         fraud,
-		notifications: notifications,
-		queue:         workflowQueue,
-		delay:         delay,
-		maxRetries:    maxRetries,
-		metrics:       metrics,
+		proposals:      proposals,
+		customers:      customers,
+		documents:      documents,
+		credit:         credit,
+		fraud:          fraud,
+		notifications:  notifications,
+		queue:          workflowQueue,
+		delay:          delay,
+		maxRetries:     maxRetries,
+		metrics:        metrics,
+		externalCredit: externalCredit,
+		externalFraud:  externalFraud,
 	}
 }
 
@@ -127,13 +148,22 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (s *server) handleProposalRoutes(w http.ResponseWriter, r *http.Request, correlationID string) {
 	trimmed := strings.TrimPrefix(r.URL.Path, "/internal/proposals/")
 	segments := strings.Split(strings.Trim(trimmed, "/"), "/")
-	if len(segments) != 2 || segments[0] == "" || segments[1] != "run-analyses" || r.Method != http.MethodPost {
-		writeError(w, http.StatusNotFound, correlationID, "not_found", "rota nao encontrada", nil)
+	if len(segments) == 2 && segments[0] != "" && segments[1] == "run-analyses" && r.Method == http.MethodPost {
+		s.enqueueWorkflow(w, r, correlationID, segments[0])
 		return
 	}
 
+	if len(segments) == 3 && segments[0] != "" && segments[1] == "external-analyses" && r.Method == http.MethodPost {
+		s.applyExternalAnalysis(w, r, correlationID, segments[0], segments[2])
+		return
+	}
+
+	writeError(w, http.StatusNotFound, correlationID, "not_found", "rota nao encontrada", nil)
+}
+
+func (s *server) enqueueWorkflow(w http.ResponseWriter, r *http.Request, correlationID, proposalID string) {
 	job := queue.Job{
-		ProposalID:    segments[0],
+		ProposalID:    proposalID,
 		CorrelationID: correlationID,
 		Attempt:       0,
 		EnqueuedAt:    time.Now().UTC().Format(time.RFC3339),
@@ -145,7 +175,7 @@ func (s *server) handleProposalRoutes(w http.ResponseWriter, r *http.Request, co
 	s.recordQueueEnqueued(r.Context())
 
 	writeJSON(w, http.StatusAccepted, workflowResponse{
-		ProposalID:  segments[0],
+		ProposalID:  proposalID,
 		FinalStatus: "queued",
 		QueueStatus: "queued",
 		Attempt:     0,
@@ -261,6 +291,10 @@ func (s *server) runWorkflow(ctx context.Context, proposalID, correlationID stri
 		return response, err
 	}
 	s.sendNotification(ctx, proposalID, customer.Email, "credit_analysis_in_progress", "Sua proposta entrou em analise de credito.", correlationID)
+	if s.externalCredit {
+		response.FinalStatus = "credit_analysis_in_progress"
+		return response, nil
+	}
 	time.Sleep(s.delay)
 
 	var creditAnalysis backend.AnalysisResult
@@ -280,31 +314,22 @@ func (s *server) runWorkflow(ctx context.Context, proposalID, correlationID stri
 		return response, nil
 	}
 
-	if err := s.updateProposalStatus(ctx, proposalID, "fraud_analysis_in_progress", correlationID); err != nil {
+	if err := s.moveToFraudStage(ctx, proposalID, customer.Email, correlationID); err != nil {
 		return response, err
 	}
-	s.sendNotification(ctx, proposalID, customer.Email, "fraud_analysis_in_progress", "Sua proposta entrou em analise antifraude.", correlationID)
+	if s.externalFraud {
+		response.FinalStatus = "fraud_analysis_in_progress"
+		return response, nil
+	}
 	time.Sleep(s.delay)
 
-	var fraudAnalysis backend.AnalysisResult
-	if err := s.fraud.Post(ctx, "/internal/proposals/"+proposalID+"/fraud-analysis", correlationID, map[string]any{
-		"customer": customer,
-	}, &fraudAnalysis); err != nil {
-		return response, err
-	}
-	if err := s.storeAnalysisResult(ctx, proposalID, correlationID, fraudAnalysis); err != nil {
+	fraudAnalysis, err := s.executeFraudAnalysis(ctx, proposalID, customer, correlationID)
+	if err != nil {
 		return response, err
 	}
 	response.Results = append(response.Results, fraudAnalysis)
 
-	finalStatus := "approved"
-	if fraudAnalysis.Result == "manual_review" {
-		finalStatus = "manual_review"
-	}
-	if fraudAnalysis.Result == "rejected" {
-		finalStatus = "rejected"
-	}
-
+	finalStatus := finalStatusFromFraudResult(fraudAnalysis.Result)
 	if err := s.updateProposalStatus(ctx, proposalID, finalStatus, correlationID); err != nil {
 		return response, err
 	}
@@ -312,6 +337,63 @@ func (s *server) runWorkflow(ctx context.Context, proposalID, correlationID stri
 
 	response.FinalStatus = finalStatus
 	return response, nil
+}
+
+func (s *server) applyExternalAnalysis(w http.ResponseWriter, r *http.Request, correlationID, proposalID, analysisType string) {
+	if analysisType != "credit" && analysisType != "fraud" {
+		writeError(w, http.StatusBadRequest, correlationID, "invalid_request", "analysis_type invalido", map[string]any{
+			"analysis_type": analysisType,
+		})
+		return
+	}
+
+	var payload externalAnalysisRequest
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		writeError(w, http.StatusBadRequest, correlationID, "invalid_request", "payload invalido", nil)
+		return
+	}
+	if !isValidExternalAnalysisResult(payload.Result) {
+		writeError(w, http.StatusBadRequest, correlationID, "invalid_request", "result invalido", map[string]any{
+			"result": payload.Result,
+		})
+		return
+	}
+
+	var proposal backend.Proposal
+	if err := s.proposals.Get(r.Context(), "/internal/proposals/"+proposalID, correlationID, &proposal); err != nil {
+		writeError(w, http.StatusBadGateway, correlationID, "upstream_error", "falha ao consultar proposta para callback externo", nil)
+		return
+	}
+
+	var customer backend.Customer
+	if err := s.customers.Get(r.Context(), "/internal/proposals/"+proposalID+"/customer", correlationID, &customer); err != nil {
+		writeError(w, http.StatusBadGateway, correlationID, "upstream_error", "falha ao consultar cliente para callback externo", nil)
+		return
+	}
+
+	var proposalStatus string
+	var err error
+	switch analysisType {
+	case "credit":
+		proposalStatus, err = s.applyExternalCreditResult(r.Context(), proposal, customer, correlationID, payload)
+	case "fraud":
+		proposalStatus, err = s.applyExternalFraudResult(r.Context(), proposal, customer, correlationID, payload)
+	}
+	if err != nil {
+		writeError(w, http.StatusBadRequest, correlationID, "invalid_state", err.Error(), map[string]any{
+			"proposal_status": proposal.Status,
+			"analysis_type":   analysisType,
+		})
+		return
+	}
+
+	writeJSON(w, http.StatusAccepted, externalAnalysisResponse{
+		Status:         "accepted",
+		ProposalID:     proposalID,
+		AnalysisType:   analysisType,
+		Result:         payload.Result,
+		ProposalStatus: proposalStatus,
+	})
 }
 
 func (s *server) handleWorkflowFailure(ctx context.Context, job queue.Job, workflowErr error) {
@@ -332,6 +414,75 @@ func (s *server) handleWorkflowFailure(ctx context.Context, job queue.Job, workf
 	}
 
 	_ = workflowErr
+}
+
+func (s *server) applyExternalCreditResult(ctx context.Context, proposal backend.Proposal, customer backend.Customer, correlationID string, payload externalAnalysisRequest) (string, error) {
+	if proposal.Status != "credit_analysis_in_progress" {
+		return "", errors.New("proposta nao esta aguardando callback de credito")
+	}
+
+	creditAnalysis := backend.AnalysisResult{
+		ProposalID:   proposal.ProposalID,
+		AnalysisType: "credit",
+		Result:       payload.Result,
+		Provider:     payload.Provider,
+		Score:        payload.Score,
+		Reason:       payload.Reason,
+	}
+	if err := s.storeAnalysisResult(ctx, proposal.ProposalID, correlationID, creditAnalysis); err != nil {
+		return "", errors.New("falha ao registrar callback externo de credito")
+	}
+	if final, done := finalizeFromResult(creditAnalysis); done {
+		if err := s.updateProposalStatus(ctx, proposal.ProposalID, final, correlationID); err != nil {
+			return "", errors.New("falha ao atualizar status da proposta")
+		}
+		s.sendNotification(ctx, proposal.ProposalID, customer.Email, final, statusMessage(final), correlationID)
+		return final, nil
+	}
+
+	if err := s.moveToFraudStage(ctx, proposal.ProposalID, customer.Email, correlationID); err != nil {
+		return "", errors.New("falha ao mover proposta para antifraude")
+	}
+	if s.externalFraud {
+		return "fraud_analysis_in_progress", nil
+	}
+
+	fraudAnalysis, err := s.executeFraudAnalysis(ctx, proposal.ProposalID, customer, correlationID)
+	if err != nil {
+		return "", errors.New("falha ao executar antifraude apos callback de credito")
+	}
+
+	finalStatus := finalStatusFromFraudResult(fraudAnalysis.Result)
+	if err := s.updateProposalStatus(ctx, proposal.ProposalID, finalStatus, correlationID); err != nil {
+		return "", errors.New("falha ao atualizar status final da proposta")
+	}
+	s.sendNotification(ctx, proposal.ProposalID, customer.Email, finalStatus, statusMessage(finalStatus), correlationID)
+	return finalStatus, nil
+}
+
+func (s *server) applyExternalFraudResult(ctx context.Context, proposal backend.Proposal, customer backend.Customer, correlationID string, payload externalAnalysisRequest) (string, error) {
+	if proposal.Status != "fraud_analysis_in_progress" {
+		return "", errors.New("proposta nao esta aguardando callback de antifraude")
+	}
+
+	fraudAnalysis := backend.AnalysisResult{
+		ProposalID:   proposal.ProposalID,
+		AnalysisType: "fraud",
+		Result:       payload.Result,
+		Provider:     payload.Provider,
+		Score:        payload.Score,
+		Reason:       payload.Reason,
+	}
+	if err := s.storeAnalysisResult(ctx, proposal.ProposalID, correlationID, fraudAnalysis); err != nil {
+		return "", errors.New("falha ao registrar callback externo de antifraude")
+	}
+
+	finalStatus := finalStatusFromFraudResult(fraudAnalysis.Result)
+	if err := s.updateProposalStatus(ctx, proposal.ProposalID, finalStatus, correlationID); err != nil {
+		return "", errors.New("falha ao atualizar status final da proposta")
+	}
+	s.sendNotification(ctx, proposal.ProposalID, customer.Email, finalStatus, statusMessage(finalStatus), correlationID)
+	return finalStatus, nil
 }
 
 func (s *server) recordQueueEnqueued(ctx context.Context) {
@@ -381,6 +532,27 @@ func (s *server) refreshQueueDepth(ctx context.Context) {
 	if depth, err := s.queue.DeadLetterLength(ctx); err == nil {
 		s.metrics.SetDeadLetterDepth(depth)
 	}
+}
+
+func (s *server) moveToFraudStage(ctx context.Context, proposalID, recipient, correlationID string) error {
+	if err := s.updateProposalStatus(ctx, proposalID, "fraud_analysis_in_progress", correlationID); err != nil {
+		return err
+	}
+	s.sendNotification(ctx, proposalID, recipient, "fraud_analysis_in_progress", "Sua proposta entrou em analise antifraude.", correlationID)
+	return nil
+}
+
+func (s *server) executeFraudAnalysis(ctx context.Context, proposalID string, customer backend.Customer, correlationID string) (backend.AnalysisResult, error) {
+	var fraudAnalysis backend.AnalysisResult
+	if err := s.fraud.Post(ctx, "/internal/proposals/"+proposalID+"/fraud-analysis", correlationID, map[string]any{
+		"customer": customer,
+	}, &fraudAnalysis); err != nil {
+		return fraudAnalysis, err
+	}
+	if err := s.storeAnalysisResult(ctx, proposalID, correlationID, fraudAnalysis); err != nil {
+		return fraudAnalysis, err
+	}
+	return fraudAnalysis, nil
 }
 
 func (s *server) updateProposalStatus(ctx context.Context, proposalID, status, correlationID string) error {
@@ -451,6 +623,26 @@ func statusMessage(status string) string {
 		return "Sua proposta precisa de documentos complementares."
 	default:
 		return "Sua proposta mudou de status."
+	}
+}
+
+func isValidExternalAnalysisResult(result string) bool {
+	switch result {
+	case "approved", "manual_review", "rejected":
+		return true
+	default:
+		return false
+	}
+}
+
+func finalStatusFromFraudResult(result string) string {
+	switch result {
+	case "manual_review":
+		return "manual_review"
+	case "rejected":
+		return "rejected"
+	default:
+		return "approved"
 	}
 }
 

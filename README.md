@@ -110,6 +110,7 @@ Pre-requisito:
 - `workflow` usa Redis como fila quando `WORKFLOW_REDIS_URL` estiver configurado e cai para fila em memoria no fallback local
 - `/metrics` do `workflow` agora inclui enqueue, process, retry, DLQ e profundidade de fila
 - o `workflow` expoe `GET /internal/dlq` e `POST /internal/dlq/reprocess` para operacao local
+- o `BFF` aceita webhooks autenticados de `storage`, `credit` e `fraud`, com `event-id` e janela anti-replay
 
 ## Seguranca minima atual
 
@@ -126,3 +127,5 @@ Pre-requisito:
 - MinIO Console: `http://localhost:9001`
 - Mock OIDC: `http://localhost:19090`
 - Webhook de storage: `POST /api/v1/webhooks/storage/document-uploaded` com `X-Webhook-Signature: sha256=<hex>`
+- Webhook de credito: `POST /api/v1/webhooks/partners/credit-analysis`
+- Webhook de antifraude: `POST /api/v1/webhooks/partners/fraud-analysis`

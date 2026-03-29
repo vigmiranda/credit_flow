@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -43,6 +44,8 @@ func TestRunAnalysesEnqueuesWorkflow(t *testing.T) {
 		0,
 		2,
 		nil,
+		false,
+		false,
 	)
 
 	req := httptest.NewRequest(http.MethodPost, "/internal/proposals/prop_123/run-analyses", nil)
@@ -174,6 +177,8 @@ func TestProcessJobApprovesProposal(t *testing.T) {
 		0,
 		2,
 		nil,
+		false,
+		false,
 	)
 
 	err := srv.processJob(context.Background(), queue.Job{
@@ -216,6 +221,8 @@ func TestListDeadLettersReturnsQueuedFailures(t *testing.T) {
 		0,
 		2,
 		nil,
+		false,
+		false,
 	)
 
 	req := httptest.NewRequest(http.MethodGet, "/internal/dlq", nil)
@@ -260,6 +267,8 @@ func TestReprocessDeadLettersMovesJobBackToQueue(t *testing.T) {
 		0,
 		2,
 		nil,
+		false,
+		false,
 	)
 
 	req := httptest.NewRequest(http.MethodPost, "/internal/dlq/reprocess", nil)
@@ -294,5 +303,189 @@ func TestReprocessDeadLettersMovesJobBackToQueue(t *testing.T) {
 	}
 	if job.Attempt != 0 || job.LastError != "" {
 		t.Fatalf("expected reset job state, got attempt=%d last_error=%q", job.Attempt, job.LastError)
+	}
+}
+
+func TestProcessJobWaitsForExternalCreditCallbackWhenEnabled(t *testing.T) {
+	statuses := make([]string, 0, 3)
+	proposalGateway := stubGateway{
+		getFunc: func(context.Context, string, string, any) error { return nil },
+		postFunc: func(_ context.Context, path, _ string, _ any, _ any) error {
+			if path != "/internal/proposals/prop_123/analysis-results" {
+				t.Fatalf("unexpected proposal post path %s", path)
+			}
+			return nil
+		},
+		patchFunc: func(_ context.Context, path, _ string, payload any, _ any) error {
+			if path != "/internal/proposals/prop_123/status" {
+				t.Fatalf("unexpected proposal patch path %s", path)
+			}
+			body := payload.(map[string]string)
+			statuses = append(statuses, body["status"])
+			return nil
+		},
+	}
+
+	customerGateway := stubGateway{
+		getFunc: func(_ context.Context, path, _ string, out any) error {
+			if path != "/internal/proposals/prop_123/customer" {
+				t.Fatalf("unexpected customer path %s", path)
+			}
+			customer := out.(*backend.Customer)
+			customer.Email = "maria@example.com"
+			return nil
+		},
+		postFunc:  func(context.Context, string, string, any, any) error { return nil },
+		patchFunc: func(context.Context, string, string, any, any) error { return nil },
+	}
+
+	documentGateway := stubGateway{
+		getFunc: func(context.Context, string, string, any) error { return nil },
+		postFunc: func(_ context.Context, path, _ string, _ any, out any) error {
+			if path != "/internal/proposals/prop_123/documents/analyze" {
+				t.Fatalf("unexpected document path %s", path)
+			}
+			result := out.(*backend.AnalysisResult)
+			*result = backend.AnalysisResult{ProposalID: "prop_123", AnalysisType: "document", Result: "approved", Provider: "doc", Score: 700}
+			return nil
+		},
+		patchFunc: func(context.Context, string, string, any, any) error { return nil },
+	}
+
+	creditGateway := stubGateway{
+		postFunc: func(context.Context, string, string, any, any) error {
+			t.Fatal("credit gateway should not be called when external credit callbacks are enabled")
+			return nil
+		},
+		getFunc:   func(context.Context, string, string, any) error { return nil },
+		patchFunc: func(context.Context, string, string, any, any) error { return nil },
+	}
+
+	notificationCount := 0
+	notificationGateway := stubGateway{
+		getFunc: func(context.Context, string, string, any) error { return nil },
+		postFunc: func(_ context.Context, path, _ string, _ any, _ any) error {
+			if path != "/internal/proposals/prop_123/notifications" {
+				t.Fatalf("unexpected notification path %s", path)
+			}
+			notificationCount++
+			return nil
+		},
+		patchFunc: func(context.Context, string, string, any, any) error { return nil },
+	}
+
+	srv := NewServer(
+		proposalGateway,
+		customerGateway,
+		documentGateway,
+		creditGateway,
+		stubGateway{},
+		notificationGateway,
+		queue.NewMemoryQueue(1),
+		0,
+		2,
+		nil,
+		true,
+		false,
+	)
+
+	err := srv.processJob(context.Background(), queue.Job{ProposalID: "prop_123", CorrelationID: "corr_test"})
+	if err != nil {
+		t.Fatalf("process job: %v", err)
+	}
+	if len(statuses) != 2 || statuses[1] != "credit_analysis_in_progress" {
+		t.Fatalf("expected workflow to stop at credit_analysis_in_progress, got %v", statuses)
+	}
+	if notificationCount != 2 {
+		t.Fatalf("expected 2 notifications, got %d", notificationCount)
+	}
+}
+
+func TestApplyExternalCreditResultAdvancesToFraudStage(t *testing.T) {
+	createdResults := 0
+	statuses := make([]string, 0, 2)
+	proposalGateway := stubGateway{
+		getFunc: func(_ context.Context, path, _ string, out any) error {
+			if path != "/internal/proposals/prop_123" {
+				t.Fatalf("unexpected proposal path %s", path)
+			}
+			proposal := out.(*backend.Proposal)
+			proposal.ProposalID = "prop_123"
+			proposal.Status = "credit_analysis_in_progress"
+			return nil
+		},
+		postFunc: func(_ context.Context, path, _ string, _ any, _ any) error {
+			if path != "/internal/proposals/prop_123/analysis-results" {
+				t.Fatalf("unexpected proposal post path %s", path)
+			}
+			createdResults++
+			return nil
+		},
+		patchFunc: func(_ context.Context, path, _ string, payload any, _ any) error {
+			if path != "/internal/proposals/prop_123/status" {
+				t.Fatalf("unexpected proposal patch path %s", path)
+			}
+			statuses = append(statuses, payload.(map[string]string)["status"])
+			return nil
+		},
+	}
+
+	customerGateway := stubGateway{
+		getFunc: func(_ context.Context, path, _ string, out any) error {
+			if path != "/internal/proposals/prop_123/customer" {
+				t.Fatalf("unexpected customer path %s", path)
+			}
+			customer := out.(*backend.Customer)
+			customer.Email = "maria@example.com"
+			return nil
+		},
+		postFunc:  func(context.Context, string, string, any, any) error { return nil },
+		patchFunc: func(context.Context, string, string, any, any) error { return nil },
+	}
+
+	notificationCount := 0
+	notificationGateway := stubGateway{
+		getFunc: func(context.Context, string, string, any) error { return nil },
+		postFunc: func(_ context.Context, path, _ string, _ any, _ any) error {
+			if path != "/internal/proposals/prop_123/notifications" {
+				t.Fatalf("unexpected notification path %s", path)
+			}
+			notificationCount++
+			return nil
+		},
+		patchFunc: func(context.Context, string, string, any, any) error { return nil },
+	}
+
+	srv := NewServer(
+		proposalGateway,
+		customerGateway,
+		stubGateway{},
+		stubGateway{},
+		stubGateway{},
+		notificationGateway,
+		queue.NewMemoryQueue(1),
+		0,
+		2,
+		nil,
+		false,
+		true,
+	)
+
+	body := strings.NewReader(`{"provider":"partner-credit","result":"approved","score":710}`)
+	req := httptest.NewRequest(http.MethodPost, "/internal/proposals/prop_123/external-analyses/credit", body)
+	resp := httptest.NewRecorder()
+	srv.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusAccepted {
+		t.Fatalf("expected status %d, got %d", http.StatusAccepted, resp.Code)
+	}
+	if createdResults != 1 {
+		t.Fatalf("expected 1 analysis result, got %d", createdResults)
+	}
+	if len(statuses) != 1 || statuses[0] != "fraud_analysis_in_progress" {
+		t.Fatalf("expected fraud_analysis_in_progress, got %v", statuses)
+	}
+	if notificationCount != 1 {
+		t.Fatalf("expected 1 notification, got %d", notificationCount)
 	}
 }

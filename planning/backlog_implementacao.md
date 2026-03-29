@@ -333,16 +333,24 @@ Objetivo: garantir repetibilidade, confianca e evolucao continua.
 
 ### Ciclo atual
 
-- Identificador: ciclo-14
+- Identificador: ciclo-15
 - Status: aberto
-- Objetivo: ampliar integracoes externas e endurecer operacao assistida
+- Objetivo: endurecer operacao multi-instancia e observabilidade dos callbacks externos
 - Itens priorizados:
-  - ampliar o workflow para callbacks de parceiros de credito e fraude
-  - consolidar autenticacao de webhooks por origem externa
   - preparar dashboards e operacao de fila para cenarios de erro mais agressivos
   - avaliar rate limit e politicas de replay para callbacks
+  - consolidar observabilidade de callbacks externos por parceiro
+  - preparar persistencia compartilhada para deduplicacao de eventos entre replicas
 - Observacao:
-  - ciclo-13 fechou webhook autenticado, operacao de DLQ e issuer OIDC mockado na stack local
+  - ciclo-14 fechou callbacks externos de credito/fraude, pausa opcional do workflow e anti-replay no BFF
+
+## Entregas materializadas no ciclo-14
+
+- `BFF` com webhooks de parceiros em `/api/v1/webhooks/partners/credit-analysis` e `/api/v1/webhooks/partners/fraud-analysis`;
+- protecao anti-replay no `BFF` com `X-Webhook-Event-Id`, `X-Webhook-Timestamp` e janela configuravel por `BFF_WEBHOOK_MAX_AGE_SECONDS`;
+- `workflow service` com callbacks internos para aplicar resultados externos de credito e fraude;
+- `workflow service` capaz de pausar em `credit_analysis_in_progress` ou `fraud_analysis_in_progress` quando os flags externos estiverem ativos;
+- contrato OpenAPI, documentacao operacional e variaveis de ambiente atualizados para o novo fluxo.
 
 ## Entregas materializadas no ciclo-13
 
@@ -472,3 +480,4 @@ Objetivo: garantir repetibilidade, confianca e evolucao continua.
 | ciclo-11 | concluido | Workflow com fila e retry, callback OIDC com token exchange e smoke da stack Docker |
 | ciclo-12 | concluido | Validacao criptografica de id_token, DLQ e metricas da fila no workflow e webhook inicial de storage no BFF |
 | ciclo-13 | concluido | Webhook autenticado no BFF, inspecao e reprocessamento de DLQ e issuer OIDC mockado na stack local |
+| ciclo-14 | concluido | Callbacks externos de credito e fraude, pausa opcional do workflow e anti-replay no BFF |
