@@ -140,3 +140,4 @@ Pre-requisito:
 - Readiness final: `powershell -ExecutionPolicy Bypass -File .\\scripts\\release_readiness.ps1`
 - Checklist de aceite: `docs/checklist_readiness_mvp.md`
 - Handoff operacional: `docs/handoff_operacional_mvp.md`
+- Encerramento formal do MVP: `docs/encerramento_mvp.md`

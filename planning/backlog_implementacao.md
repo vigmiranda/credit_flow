@@ -333,15 +333,20 @@ Objetivo: garantir repetibilidade, confianca e evolucao continua.
 
 ### Ciclo atual
 
-- Identificador: ciclo-21
-- Status: aberto
-- Objetivo: formalizar encerramento do MVP e ultimos ajustes residuais
+- Identificador: backlog_mvp_encerrado
+- Status: concluido
+- Objetivo: backlog do MVP formalmente concluido
 - Itens priorizados:
-  - revisar pendencias residuais apos readiness final
-  - consolidar encerramento formal do backlog do MVP
-  - avaliar polimentos finais de documentacao e operacao
+  - backlog do MVP encerrado
+  - novos trabalhos devem ser abertos como `pos-mvp`
 - Observacao:
-  - ciclo-20 fechou readiness final, handoff operacional e encadeamento automatizado de validacao
+  - ciclo-21 fechou o encerramento formal do MVP e consolidou as pendencias fora de escopo em documentacao
+
+## Entregas materializadas no ciclo-21
+
+- documento `docs/encerramento_mvp.md` consolidando status final, escopo entregue e pendencias fora do MVP;
+- backlog do MVP marcado como encerrado;
+- repositorio preparado para abrir um backlog `pos-mvp` separado, se necessario.
 
 ## Entregas materializadas no ciclo-20
 
@@ -534,3 +539,4 @@ Objetivo: garantir repetibilidade, confianca e evolucao continua.
 | ciclo-18 | concluido | Rate limit por rota/parceiro, metricas operacionais ampliadas e playbook de callbacks |
 | ciclo-19 | concluido | Overview operacional consolidado, dashboards revisados e triagem assistida |
 | ciclo-20 | concluido | Readiness final, handoff operacional e script unico de validacao |
+| ciclo-21 | concluido | Encerramento formal do MVP e consolidacao das pendencias fora de escopo |

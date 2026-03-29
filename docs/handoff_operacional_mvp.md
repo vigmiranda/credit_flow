@@ -38,3 +38,7 @@
 - thresholds e alertas ainda sao locais e documentais, nao integrados a um stack de monitoramento externo;
 - callbacks de parceiros seguem mockados no ambiente local;
 - operacao esta otimizada para readiness de desenvolvimento e demonstracao, nao para producao regulada.
+
+## Referencia de encerramento
+
+- usar `docs/encerramento_mvp.md` como marco de fechamento do backlog do MVP e ponto de partida para um backlog `pos-mvp`.
