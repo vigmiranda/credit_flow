@@ -141,3 +141,4 @@ Pre-requisito:
 - Checklist de aceite: `docs/checklist_readiness_mvp.md`
 - Handoff operacional: `docs/handoff_operacional_mvp.md`
 - Encerramento formal do MVP: `docs/encerramento_mvp.md`
+- Guia de teste manual E2E: `docs/teste_manual_ponta_a_ponta.md`
