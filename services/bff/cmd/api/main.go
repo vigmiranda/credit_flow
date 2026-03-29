@@ -24,6 +24,7 @@ func main() {
 		backend.NewClient(cfg.DocumentServiceURL),
 		backend.NewClient(cfg.WorkflowServiceURL),
 		backend.NewClient(cfg.NotificationServiceURL),
+		cfg.WebhookSecret,
 	))
 
 	mux := http.NewServeMux()

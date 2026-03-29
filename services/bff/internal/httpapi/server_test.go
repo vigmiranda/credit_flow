@@ -3,6 +3,9 @@ package httpapi
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"mime/multipart"
@@ -188,6 +191,7 @@ func TestGetProposalAggregatesCustomerAndDocuments(t *testing.T) {
 			},
 			postFunc: func(context.Context, string, string, any, any) (int, error) { return 0, errors.New("unexpected") },
 		},
+		"",
 	)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/proposals/prop_123", nil)
@@ -288,6 +292,7 @@ func TestUpsertCustomerUpdatesProposalStatus(t *testing.T) {
 			},
 			getFunc: func(context.Context, string, string, any) (int, error) { return 0, errors.New("unexpected") },
 		},
+		"",
 	)
 
 	body := bytes.NewBufferString(`{"full_name":"Maria Silva","cpf":"12345678901","birth_date":"1990-01-01","email":"maria@example.com","phone":"11999999999","monthly_income":5000}`)
@@ -365,6 +370,7 @@ func TestMarkDocumentReceivedTriggersWorkflow(t *testing.T) {
 			},
 			getFunc: func(context.Context, string, string, any) (int, error) { return 0, errors.New("unexpected") },
 		},
+		"",
 	)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/proposals/prop_123/documents/doc_123/received", nil)
@@ -448,6 +454,7 @@ func TestUploadDocumentContentTriggersWorkflow(t *testing.T) {
 			},
 			getFunc: func(context.Context, string, string, any) (int, error) { return 0, errors.New("unexpected") },
 		},
+		"",
 	)
 
 	body := &bytes.Buffer{}
@@ -485,6 +492,7 @@ func TestUploadDocumentContentTriggersWorkflow(t *testing.T) {
 func TestStorageWebhookTriggersWorkflow(t *testing.T) {
 	workflowTriggered := make(chan struct{}, 1)
 	notificationCalled := false
+	secret := "local-webhook-secret"
 	srv := NewServer(
 		stubProposalGateway{
 			postFunc: func(context.Context, string, string, any, any) (int, error) { return 0, errors.New("unexpected") },
@@ -541,10 +549,12 @@ func TestStorageWebhookTriggersWorkflow(t *testing.T) {
 			},
 			getFunc: func(context.Context, string, string, any) (int, error) { return 0, errors.New("unexpected") },
 		},
+		secret,
 	)
 
 	body := bytes.NewBufferString(`{"proposal_id":"prop_123","document_id":"doc_123","provider":"minio","event_type":"object_created"}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/storage/document-uploaded", body)
+	req.Header.Set(headerWebhookSig, testWebhookSignature(secret, body.Bytes()))
 	resp := httptest.NewRecorder()
 	srv.ServeHTTP(resp, req)
 
@@ -560,4 +570,31 @@ func TestStorageWebhookTriggersWorkflow(t *testing.T) {
 	if !notificationCalled {
 		t.Fatal("expected notification after storage webhook")
 	}
+}
+
+func TestStorageWebhookRejectsInvalidSignature(t *testing.T) {
+	srv := NewServer(
+		stubProposalGateway{},
+		stubCustomerGateway{},
+		stubDocumentGateway{},
+		stubWorkflowGateway{},
+		stubNotificationGateway{},
+		"local-webhook-secret",
+	)
+
+	body := bytes.NewBufferString(`{"proposal_id":"prop_123","document_id":"doc_123"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/storage/document-uploaded", body)
+	req.Header.Set(headerWebhookSig, "sha256=deadbeef")
+	resp := httptest.NewRecorder()
+	srv.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status %d, got %d", http.StatusUnauthorized, resp.Code)
+	}
+}
+
+func testWebhookSignature(secret string, body []byte) string {
+	mac := hmac.New(sha256.New, []byte(secret))
+	_, _ = mac.Write(body)
+	return "sha256=" + hex.EncodeToString(mac.Sum(nil))
 }

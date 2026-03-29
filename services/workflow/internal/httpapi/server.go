@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -50,6 +51,21 @@ type workflowResponse struct {
 	Results     []backend.AnalysisResult `json:"results"`
 }
 
+type deadLetterResponse struct {
+	Count int         `json:"count"`
+	Jobs  []queue.Job `json:"jobs"`
+}
+
+type reprocessDLQRequest struct {
+	ProposalID string `json:"proposal_id,omitempty"`
+}
+
+type reprocessDLQResponse struct {
+	Status           string `json:"status"`
+	ProposalID       string `json:"proposal_id,omitempty"`
+	ReprocessedCount int    `json:"reprocessed_count"`
+}
+
 type errorResponse struct {
 	Code          string         `json:"code"`
 	Message       string         `json:"message"`
@@ -94,6 +110,12 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case r.Method == http.MethodGet && r.URL.Path == "/healthz":
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 		return
+	case r.Method == http.MethodGet && r.URL.Path == "/internal/dlq":
+		s.listDeadLetters(w, r, correlationID)
+		return
+	case r.Method == http.MethodPost && r.URL.Path == "/internal/dlq/reprocess":
+		s.reprocessDeadLetters(w, r, correlationID)
+		return
 	case strings.HasPrefix(r.URL.Path, "/internal/proposals/"):
 		s.handleProposalRoutes(w, r, correlationID)
 		return
@@ -128,6 +150,42 @@ func (s *server) handleProposalRoutes(w http.ResponseWriter, r *http.Request, co
 		QueueStatus: "queued",
 		Attempt:     0,
 		Results:     []backend.AnalysisResult{},
+	})
+}
+
+func (s *server) listDeadLetters(w http.ResponseWriter, r *http.Request, correlationID string) {
+	jobs, err := s.queue.ListDeadLetters(r.Context())
+	if err != nil {
+		writeError(w, http.StatusBadGateway, correlationID, "queue_error", "falha ao consultar DLQ", nil)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, deadLetterResponse{
+		Count: len(jobs),
+		Jobs:  jobs,
+	})
+}
+
+func (s *server) reprocessDeadLetters(w http.ResponseWriter, r *http.Request, correlationID string) {
+	var payload reprocessDLQRequest
+	if r.Body != nil {
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil && !errors.Is(err, io.EOF) {
+			writeError(w, http.StatusBadRequest, correlationID, "invalid_request", "payload invalido", nil)
+			return
+		}
+	}
+
+	count, err := s.queue.RequeueDeadLetters(r.Context(), strings.TrimSpace(payload.ProposalID))
+	if err != nil {
+		writeError(w, http.StatusBadGateway, correlationID, "queue_error", "falha ao reprocessar DLQ", nil)
+		return
+	}
+	s.refreshQueueDepth(r.Context())
+
+	writeJSON(w, http.StatusAccepted, reprocessDLQResponse{
+		Status:           "accepted",
+		ProposalID:       strings.TrimSpace(payload.ProposalID),
+		ReprocessedCount: count,
 	})
 }
 

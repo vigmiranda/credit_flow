@@ -16,4 +16,6 @@ type Queue interface {
 	Length(ctx context.Context) (int64, error)
 	DeadLetter(ctx context.Context, job Job) error
 	DeadLetterLength(ctx context.Context) (int64, error)
+	ListDeadLetters(ctx context.Context) ([]Job, error)
+	RequeueDeadLetters(ctx context.Context, proposalID string) (int, error)
 }

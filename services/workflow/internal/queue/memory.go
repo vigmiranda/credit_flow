@@ -57,3 +57,41 @@ func (q *MemoryQueue) DeadLetterLength(context.Context) (int64, error) {
 
 	return int64(len(q.dlq)), nil
 }
+
+func (q *MemoryQueue) ListDeadLetters(context.Context) ([]Job, error) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	jobs := make([]Job, len(q.dlq))
+	copy(jobs, q.dlq)
+	return jobs, nil
+}
+
+func (q *MemoryQueue) RequeueDeadLetters(ctx context.Context, proposalID string) (int, error) {
+	q.mu.Lock()
+	selected := make([]Job, 0, len(q.dlq))
+	remaining := make([]Job, 0, len(q.dlq))
+	for _, job := range q.dlq {
+		if proposalID == "" || job.ProposalID == proposalID {
+			selected = append(selected, job)
+			continue
+		}
+		remaining = append(remaining, job)
+	}
+	q.dlq = remaining
+	q.mu.Unlock()
+
+	for _, job := range selected {
+		job.Attempt = 0
+		job.EnqueuedAt = ""
+		job.LastError = ""
+		if err := q.Enqueue(ctx, job); err != nil {
+			q.mu.Lock()
+			q.dlq = append(selected, q.dlq...)
+			q.mu.Unlock()
+			return 0, err
+		}
+	}
+
+	return len(selected), nil
+}

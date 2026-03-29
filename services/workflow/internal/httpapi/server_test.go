@@ -193,3 +193,106 @@ func TestProcessJobApprovesProposal(t *testing.T) {
 		t.Fatalf("expected 4 notifications, got %d", notificationPostCount)
 	}
 }
+
+func TestListDeadLettersReturnsQueuedFailures(t *testing.T) {
+	workflowQueue := queue.NewMemoryQueue(2)
+	if err := workflowQueue.DeadLetter(context.Background(), queue.Job{
+		ProposalID:    "prop_123",
+		CorrelationID: "corr_123",
+		Attempt:       2,
+		LastError:     "credit timeout",
+	}); err != nil {
+		t.Fatalf("dead letter: %v", err)
+	}
+
+	srv := NewServer(
+		stubGateway{},
+		stubGateway{},
+		stubGateway{},
+		stubGateway{},
+		stubGateway{},
+		stubGateway{},
+		workflowQueue,
+		0,
+		2,
+		nil,
+	)
+
+	req := httptest.NewRequest(http.MethodGet, "/internal/dlq", nil)
+	resp := httptest.NewRecorder()
+	srv.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, resp.Code)
+	}
+
+	var response deadLetterResponse
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if response.Count != 1 {
+		t.Fatalf("expected 1 dead letter, got %d", response.Count)
+	}
+	if len(response.Jobs) != 1 || response.Jobs[0].ProposalID != "prop_123" {
+		t.Fatal("expected DLQ payload with proposal prop_123")
+	}
+}
+
+func TestReprocessDeadLettersMovesJobBackToQueue(t *testing.T) {
+	workflowQueue := queue.NewMemoryQueue(2)
+	if err := workflowQueue.DeadLetter(context.Background(), queue.Job{
+		ProposalID:    "prop_123",
+		CorrelationID: "corr_123",
+		Attempt:       2,
+		LastError:     "credit timeout",
+	}); err != nil {
+		t.Fatalf("dead letter: %v", err)
+	}
+
+	srv := NewServer(
+		stubGateway{},
+		stubGateway{},
+		stubGateway{},
+		stubGateway{},
+		stubGateway{},
+		stubGateway{},
+		workflowQueue,
+		0,
+		2,
+		nil,
+	)
+
+	req := httptest.NewRequest(http.MethodPost, "/internal/dlq/reprocess", nil)
+	resp := httptest.NewRecorder()
+	srv.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusAccepted {
+		t.Fatalf("expected status %d, got %d", http.StatusAccepted, resp.Code)
+	}
+
+	var response reprocessDLQResponse
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if response.ReprocessedCount != 1 {
+		t.Fatalf("expected 1 reprocessed job, got %d", response.ReprocessedCount)
+	}
+
+	if depth, err := workflowQueue.DeadLetterLength(context.Background()); err != nil || depth != 0 {
+		t.Fatalf("expected empty DLQ, got depth=%d err=%v", depth, err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	job, err := workflowQueue.Dequeue(ctx)
+	if err != nil {
+		t.Fatalf("dequeue reprocessed job: %v", err)
+	}
+	if job.ProposalID != "prop_123" {
+		t.Fatalf("expected proposal id prop_123, got %s", job.ProposalID)
+	}
+	if job.Attempt != 0 || job.LastError != "" {
+		t.Fatalf("expected reset job state, got attempt=%d last_error=%q", job.Attempt, job.LastError)
+	}
+}

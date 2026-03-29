@@ -333,16 +333,25 @@ Objetivo: garantir repetibilidade, confianca e evolucao continua.
 
 ### Ciclo atual
 
-- Identificador: ciclo-13
+- Identificador: ciclo-14
 - Status: aberto
-- Objetivo: endurecer integracoes externas e operacao do fluxo
+- Objetivo: ampliar integracoes externas e endurecer operacao assistida
 - Itens priorizados:
-  - testar integracao local com issuer OIDC real ou mock dedicado
-  - adicionar validacao/autenticacao de webhook externo
   - ampliar o workflow para callbacks de parceiros de credito e fraude
-  - expor inspeção operacional de DLQ e reprocessamento manual
+  - consolidar autenticacao de webhooks por origem externa
+  - preparar dashboards e operacao de fila para cenarios de erro mais agressivos
+  - avaliar rate limit e politicas de replay para callbacks
 - Observacao:
-  - ciclo-12 fechou webhook inicial, validacao criptografica de `id_token` e observabilidade de fila com DLQ
+  - ciclo-13 fechou webhook autenticado, operacao de DLQ e issuer OIDC mockado na stack local
+
+## Entregas materializadas no ciclo-13
+
+- `BFF` com validacao HMAC de `X-Webhook-Signature` para o webhook de storage;
+- `workflow service` com endpoints internos para listar DLQ e reprocessar jobs manualmente;
+- `workflow service` exposto localmente em `localhost:18084` para inspecao operacional;
+- novo `mock-oidc service` com `authorize`, `token`, `userinfo`, `jwks` e `discovery`;
+- stack Docker local configurada por padrao para login OIDC real contra o issuer mockado;
+- smoke da stack Docker endurecido para validar `bff`, `workflow` e `mock-oidc`.
 
 ## Entregas materializadas no ciclo-3
 
@@ -462,3 +471,4 @@ Objetivo: garantir repetibilidade, confianca e evolucao continua.
 | ciclo-10 | concluido | Upload real via MinIO, notificacoes SMTP locais via Mailpit e callback OIDC inicial no front |
 | ciclo-11 | concluido | Workflow com fila e retry, callback OIDC com token exchange e smoke da stack Docker |
 | ciclo-12 | concluido | Validacao criptografica de id_token, DLQ e metricas da fila no workflow e webhook inicial de storage no BFF |
+| ciclo-13 | concluido | Webhook autenticado no BFF, inspecao e reprocessamento de DLQ e issuer OIDC mockado na stack local |

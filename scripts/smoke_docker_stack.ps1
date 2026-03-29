@@ -3,6 +3,8 @@ Add-Type -AssemblyName System.Net.Http
 
 $composeFile = "infra/docker/docker-compose.yml"
 $bffBaseUrl = "http://localhost:18080"
+$workflowBaseUrl = "http://localhost:18084"
+$oidcBaseUrl = "http://localhost:19090"
 $tempFile = Join-Path $env:TEMP "credit-flow-smoke-upload.jpg"
 
 function Wait-ForHealth {
@@ -59,6 +61,8 @@ function Send-MultipartFile {
 try {
   docker compose -f $composeFile up -d --build | Out-Null
   Wait-ForHealth "$bffBaseUrl/healthz"
+  Wait-ForHealth "$workflowBaseUrl/healthz"
+  Wait-ForHealth "$oidcBaseUrl/healthz"
 
   Write-Host "==> Criando proposta"
   $proposal = Invoke-RestMethod -Uri "$bffBaseUrl/api/v1/proposals" -Method Post

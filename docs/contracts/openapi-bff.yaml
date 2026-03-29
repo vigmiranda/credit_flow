@@ -182,6 +182,7 @@ paths:
       operationId: handleStorageDocumentUploaded
       parameters:
         - $ref: "#/components/parameters/CorrelationId"
+        - $ref: "#/components/parameters/WebhookSignature"
       requestBody:
         required: true
         content:
@@ -195,6 +196,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AcceptedWebhookResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "400":
           $ref: "#/components/responses/BadRequest"
 components:
@@ -223,9 +226,22 @@ components:
       required: false
       schema:
         type: string
+    WebhookSignature:
+      name: X-Webhook-Signature
+      in: header
+      required: false
+      schema:
+        type: string
+        example: sha256=20ce4ff725f3f2c5ef0b5980d1f2ff97f8ed6ec1cdd3e8a4d9d2c6fa8c579db1
   responses:
     BadRequest:
       description: Requisicao invalida
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Unauthorized:
+      description: Assinatura do webhook invalida
       content:
         application/json:
           schema:

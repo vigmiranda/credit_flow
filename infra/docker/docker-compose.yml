@@ -34,6 +34,23 @@ services:
       - "1025:1025"
       - "8025:8025"
 
+  mock-oidc:
+    build:
+      context: ../../services/mock-oidc
+    container_name: credit-flow-mock-oidc
+    environment:
+      MOCK_OIDC_PORT: "8090"
+      MOCK_OIDC_ISSUER_URL: http://localhost:19090
+      MOCK_OIDC_CLIENT_ID: credit-flow-web
+      MOCK_OIDC_CLIENT_SECRET: credit-flow-local-secret
+      MOCK_OIDC_DEFAULT_SUB: operator-001
+      MOCK_OIDC_DEFAULT_NAME: Local Operator
+      MOCK_OIDC_DEFAULT_EMAIL: operator@local.test
+      MOCK_OIDC_DEFAULT_ROLE: operations
+      MOCK_OIDC_DEFAULT_USERNAME: local.operator
+    ports:
+      - "19090:8090"
+
   minio:
     image: minio/minio:RELEASE.2025-09-07T16-13-09Z-cpuv1
     container_name: credit-flow-minio
@@ -152,6 +169,8 @@ services:
         condition: service_started
       redis:
         condition: service_healthy
+    ports:
+      - "18084:8084"
 
   bff:
     build:
@@ -164,6 +183,7 @@ services:
       DOCUMENT_SERVICE_URL: http://document:8083
       WORKFLOW_SERVICE_URL: http://workflow:8084
       NOTIFICATION_SERVICE_URL: http://notification:8087
+      BFF_WEBHOOK_SECRET: credit-flow-local-webhook-secret
     depends_on:
       proposal:
         condition: service_started
@@ -187,13 +207,22 @@ services:
     environment:
       NODE_ENV: production
       NEXT_PUBLIC_BFF_URL: http://localhost:18080
-      AUTH_MODE: mock
+      AUTH_MODE: oidc
+      OIDC_ISSUER_URL: http://localhost:19090
+      OIDC_DISCOVERY_URL: http://mock-oidc:8090/.well-known/openid-configuration
+      OIDC_CLIENT_ID: credit-flow-web
+      OIDC_CLIENT_SECRET: credit-flow-local-secret
       OIDC_AUTHORIZE_PATH: /authorize
       OIDC_TOKEN_PATH: /token
+      OIDC_TOKEN_URL: http://mock-oidc:8090/token
       OIDC_USERINFO_PATH: /userinfo
+      OIDC_USERINFO_URL: http://mock-oidc:8090/userinfo
+      OIDC_JWKS_URL: http://mock-oidc:8090/jwks
       OIDC_REDIRECT_URI: http://localhost:3000/api/auth/callback
     depends_on:
       bff:
+        condition: service_started
+      mock-oidc:
         condition: service_started
     ports:
       - "3000:3000"

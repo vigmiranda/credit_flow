@@ -2,6 +2,9 @@ package httpapi
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -13,6 +16,7 @@ import (
 
 const (
 	headerCorrelationID = "X-Correlation-Id"
+	headerWebhookSig    = "X-Webhook-Signature"
 )
 
 type proposalGateway interface {
@@ -47,6 +51,7 @@ type server struct {
 	documents     documentGateway
 	workflow      workflowGateway
 	notifications notificationGateway
+	webhookSecret string
 }
 
 type healthResponse struct {
@@ -121,13 +126,14 @@ type storageWebhookRequest struct {
 	OccurredAt string `json:"occurred_at,omitempty"`
 }
 
-func NewServer(proposals proposalGateway, customers customerGateway, documents documentGateway, workflow workflowGateway, notifications notificationGateway) http.Handler {
+func NewServer(proposals proposalGateway, customers customerGateway, documents documentGateway, workflow workflowGateway, notifications notificationGateway, webhookSecret string) http.Handler {
 	return &server{
 		proposals:     proposals,
 		customers:     customers,
 		documents:     documents,
 		workflow:      workflow,
 		notifications: notifications,
+		webhookSecret: webhookSecret,
 	}
 }
 
@@ -413,8 +419,19 @@ func (s *server) uploadDocumentContent(w http.ResponseWriter, r *http.Request, c
 }
 
 func (s *server) handleStorageDocumentUploaded(w http.ResponseWriter, r *http.Request, correlationID string) {
+	rawBody, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, correlationID, "invalid_request", "payload invalido", nil)
+		return
+	}
+
+	if !verifyWebhookSignature(s.webhookSecret, rawBody, r.Header.Get(headerWebhookSig)) {
+		writeError(w, http.StatusUnauthorized, correlationID, "invalid_signature", "assinatura do webhook invalida", nil)
+		return
+	}
+
 	var payload storageWebhookRequest
-	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+	if err := json.Unmarshal(rawBody, &payload); err != nil {
 		writeError(w, http.StatusBadRequest, correlationID, "invalid_request", "payload invalido", nil)
 		return
 	}
@@ -535,4 +552,26 @@ func applyCORS(w http.ResponseWriter) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-Correlation-Id, Idempotency-Key")
 	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, OPTIONS")
+}
+
+func verifyWebhookSignature(secret string, body []byte, provided string) bool {
+	if strings.TrimSpace(secret) == "" {
+		return true
+	}
+
+	signature := strings.TrimSpace(provided)
+	if !strings.HasPrefix(signature, "sha256=") {
+		return false
+	}
+
+	decoded, err := hex.DecodeString(strings.TrimPrefix(signature, "sha256="))
+	if err != nil {
+		return false
+	}
+
+	mac := hmac.New(sha256.New, []byte(secret))
+	_, _ = mac.Write(body)
+	expected := mac.Sum(nil)
+
+	return hmac.Equal(decoded, expected)
 }

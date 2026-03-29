@@ -16,6 +16,7 @@ Repositorio base para a plataforma de captura e analise de propostas de cartoes.
   /credit-analysis
   /fraud-analysis
   /notification
+  /mock-oidc
 /infra
   /docker
   /terraform
@@ -55,6 +56,7 @@ Entregar um slice vertical demonstravel do fluxo de proposta:
 - `services/credit-analysis`: simulador de analise de credito
 - `services/fraud-analysis`: simulador de analise de fraude
 - `services/notification`: registra o historico de notificacoes e envia e-mail por SMTP local
+- `services/mock-oidc`: issuer OIDC mockado para login real na stack local
 - `services/bff`: agrega os servicos core para o front
 - `apps/web`: jornada inicial em Next.js consumindo o BFF
 
@@ -80,7 +82,9 @@ Pre-requisito:
 - `mailpit` UI em `http://localhost:8025`
 - `minio` API em `http://localhost:9000`
 - `minio` console em `http://localhost:9001`
+- `mock-oidc` em `http://localhost:19090`
 - `bff` em `http://localhost:18080`
+- `workflow` operacional em `http://localhost:18084`
 - `web` em `http://localhost:3000`
 - servicos internos acessiveis apenas pela rede Docker da stack
 
@@ -89,6 +93,7 @@ Pre-requisito:
 - `apps/web` agora protege `/` por cookie de sessao e redireciona para `/login`
 - `AUTH_MODE=mock` habilita login operacional local
 - `AUTH_MODE=oidc` habilita inicio de login via issuer configurado, troca de token e validacao criptografica do `id_token` por discovery/JWKS
+- a stack Docker sobe por padrao com `AUTH_MODE=oidc` ligado ao `mock-oidc`
 
 ## Validacao rapida
 
@@ -104,6 +109,7 @@ Pre-requisito:
 - logs estruturados em JSON com `correlation_id`, `path`, `status_code` e `duration_ms`
 - `workflow` usa Redis como fila quando `WORKFLOW_REDIS_URL` estiver configurado e cai para fila em memoria no fallback local
 - `/metrics` do `workflow` agora inclui enqueue, process, retry, DLQ e profundidade de fila
+- o `workflow` expoe `GET /internal/dlq` e `POST /internal/dlq/reprocess` para operacao local
 
 ## Seguranca minima atual
 
@@ -115,6 +121,8 @@ Pre-requisito:
 
 - Front web: `http://localhost:3000`
 - BFF: `http://localhost:18080`
+- Workflow: `http://localhost:18084`
 - Mailpit UI: `http://localhost:8025`
 - MinIO Console: `http://localhost:9001`
-- Webhook de storage: `POST /api/v1/webhooks/storage/document-uploaded`
+- Mock OIDC: `http://localhost:19090`
+- Webhook de storage: `POST /api/v1/webhooks/storage/document-uploaded` com `X-Webhook-Signature: sha256=<hex>`

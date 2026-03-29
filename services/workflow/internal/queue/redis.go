@@ -81,3 +81,71 @@ func (q *RedisQueue) DeadLetter(ctx context.Context, job Job) error {
 func (q *RedisQueue) DeadLetterLength(ctx context.Context) (int64, error) {
 	return q.client.LLen(ctx, q.dlqName).Result()
 }
+
+func (q *RedisQueue) ListDeadLetters(ctx context.Context) ([]Job, error) {
+	items, err := q.client.LRange(ctx, q.dlqName, 0, -1).Result()
+	if err != nil {
+		return nil, err
+	}
+
+	jobs := make([]Job, 0, len(items))
+	for _, item := range items {
+		var job Job
+		if err := json.Unmarshal([]byte(item), &job); err != nil {
+			return nil, err
+		}
+		jobs = append(jobs, job)
+	}
+
+	return jobs, nil
+}
+
+func (q *RedisQueue) RequeueDeadLetters(ctx context.Context, proposalID string) (int, error) {
+	items, err := q.client.LRange(ctx, q.dlqName, 0, -1).Result()
+	if err != nil {
+		return 0, err
+	}
+
+	selected := make([]string, 0, len(items))
+	remaining := make([]string, 0, len(items))
+	for _, item := range items {
+		var job Job
+		if err := json.Unmarshal([]byte(item), &job); err != nil {
+			return 0, err
+		}
+		if proposalID == "" || job.ProposalID == proposalID {
+			job.Attempt = 0
+			job.EnqueuedAt = ""
+			job.LastError = ""
+			raw, err := json.Marshal(job)
+			if err != nil {
+				return 0, err
+			}
+			selected = append(selected, string(raw))
+			continue
+		}
+		remaining = append(remaining, item)
+	}
+
+	pipe := q.client.TxPipeline()
+	pipe.Del(ctx, q.dlqName)
+	if len(remaining) > 0 {
+		values := make([]any, len(remaining))
+		for index, item := range remaining {
+			values[index] = item
+		}
+		pipe.RPush(ctx, q.dlqName, values...)
+	}
+	if len(selected) > 0 {
+		values := make([]any, len(selected))
+		for index, item := range selected {
+			values[index] = item
+		}
+		pipe.RPush(ctx, q.queueName, values...)
+	}
+	if _, err := pipe.Exec(ctx); err != nil {
+		return 0, err
+	}
+
+	return len(selected), nil
+}
