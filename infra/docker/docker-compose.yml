@@ -189,6 +189,8 @@ services:
       BFF_WEBHOOK_MAX_AGE_SECONDS: "300"
       BFF_REDIS_URL: redis://redis:6379/2
       BFF_WEBHOOK_REPLAY_PREFIX: bff:webhook:events
+      BFF_WEBHOOK_AUDIT_PREFIX: bff:webhook:audit
+      BFF_WEBHOOK_AUDIT_RETENTION_SECONDS: "604800"
     depends_on:
       proposal:
         condition: service_started

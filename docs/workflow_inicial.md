@@ -61,6 +61,8 @@ Descrever o fluxo implementado para a simulacao das analises de documento, credi
 - o upload de documento passa por `BFF -> Document Service -> MinIO`;
 - o BFF expoe um webhook inicial em `/api/v1/webhooks/storage/document-uploaded` com assinatura HMAC em `X-Webhook-Signature`;
 - o BFF tambem expoe `/api/v1/webhooks/partners/credit-analysis` e `/api/v1/webhooks/partners/fraud-analysis` com `X-Webhook-Event-Id` e `X-Webhook-Timestamp` para anti-replay;
+- cada callback recebido passa a gerar um registro de auditoria consultavel e com suporte a `replay-release` manual;
+- o BFF tambem expoe `/api/v1/webhooks/partners/credit-analysis` e `/api/v1/webhooks/partners/fraud-analysis` com `X-Webhook-Event-Id` e `X-Webhook-Timestamp` para anti-replay;
 - os resultados ficam persistidos no `proposal service`;
 - as notificacoes ficam persistidas no `notification service` e sao enviadas para o Mailpit no ambiente local;
 - o front le a proposta consolidada com cliente, documentos e resultados das analises;

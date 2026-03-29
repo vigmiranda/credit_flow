@@ -113,6 +113,7 @@ Pre-requisito:
 - o `BFF` aceita webhooks autenticados de `storage`, `credit` e `fraud`, com `event-id` e janela anti-replay
 - quando `BFF_REDIS_URL` estiver configurado, a deduplicacao dos webhooks passa a ser compartilhada entre replicas
 - `/metrics` do `BFF` agora inclui contadores de callbacks por tipo, parceiro e replay status
+- o `BFF` persiste auditoria dos callbacks e expoe `GET /internal/webhooks/audit` e `POST /internal/webhooks/audit/{eventId}/replay-release`
 
 ## Seguranca minima atual
 

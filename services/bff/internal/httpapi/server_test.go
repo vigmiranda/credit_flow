@@ -714,6 +714,134 @@ func TestAnalysisWebhookRejectsStaleTimestamp(t *testing.T) {
 	}
 }
 
+func TestWebhookAuditListReturnsPersistedRecords(t *testing.T) {
+	replayStore := NewMemoryWebhookReplayStore()
+	auditStore := NewMemoryWebhookAuditStore()
+	srv := NewServerWithDependencies(
+		stubProposalGateway{},
+		stubCustomerGateway{},
+		stubDocumentGateway{},
+		stubWorkflowGateway{
+			postFunc: func(_ context.Context, path, _ string, payload any, out any) (int, error) {
+				response := out.(*map[string]any)
+				*response = map[string]any{
+					"proposal_id": "prop_123",
+				}
+				return http.StatusAccepted, nil
+			},
+		},
+		stubNotificationGateway{},
+		"local-webhook-secret",
+		5*time.Minute,
+		replayStore,
+		auditStore,
+		nil,
+	)
+
+	body := bytes.NewBufferString(`{"proposal_id":"prop_123","provider":"partner-credit","result":"approved"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/partners/credit-analysis", body)
+	req.Header.Set(headerWebhookSig, testWebhookSignature("local-webhook-secret", body.Bytes()))
+	setWebhookHeaders(req, "evt_credit_audit", time.Now().UTC())
+	resp := httptest.NewRecorder()
+	srv.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusAccepted {
+		t.Fatalf("expected status %d, got %d", http.StatusAccepted, resp.Code)
+	}
+
+	listReq := httptest.NewRequest(http.MethodGet, "/internal/webhooks/audit?event_id=evt_credit_audit", nil)
+	listResp := httptest.NewRecorder()
+	srv.ServeHTTP(listResp, listReq)
+
+	if listResp.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, listResp.Code)
+	}
+
+	var payload struct {
+		Count   int                  `json:"count"`
+		Records []WebhookAuditRecord `json:"records"`
+	}
+	if err := json.NewDecoder(listResp.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if payload.Count != 1 || len(payload.Records) != 1 {
+		t.Fatalf("expected 1 audit record, got count=%d len=%d", payload.Count, len(payload.Records))
+	}
+	if payload.Records[0].ReplayStatus != "processed" {
+		t.Fatalf("expected replay status processed, got %s", payload.Records[0].ReplayStatus)
+	}
+}
+
+func TestWebhookReplayReleaseAllowsManualReplay(t *testing.T) {
+	replayStore := NewMemoryWebhookReplayStore()
+	auditStore := NewMemoryWebhookAuditStore()
+	callCount := 0
+	srv := NewServerWithDependencies(
+		stubProposalGateway{},
+		stubCustomerGateway{},
+		stubDocumentGateway{},
+		stubWorkflowGateway{
+			postFunc: func(_ context.Context, path, _ string, payload any, out any) (int, error) {
+				callCount++
+				response := out.(*map[string]any)
+				*response = map[string]any{
+					"proposal_id": "prop_123",
+				}
+				return http.StatusAccepted, nil
+			},
+		},
+		stubNotificationGateway{},
+		"local-webhook-secret",
+		5*time.Minute,
+		replayStore,
+		auditStore,
+		nil,
+	)
+
+	send := func() int {
+		body := bytes.NewBufferString(`{"proposal_id":"prop_123","provider":"partner-credit","result":"approved"}`)
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/partners/credit-analysis", body)
+		req.Header.Set(headerWebhookSig, testWebhookSignature("local-webhook-secret", body.Bytes()))
+		setWebhookHeaders(req, "evt_credit_release", time.Now().UTC())
+		resp := httptest.NewRecorder()
+		srv.ServeHTTP(resp, req)
+		return resp.Code
+	}
+
+	if status := send(); status != http.StatusAccepted {
+		t.Fatalf("expected first webhook accepted, got %d", status)
+	}
+	if status := send(); status != http.StatusAccepted {
+		t.Fatalf("expected duplicate webhook accepted, got %d", status)
+	}
+	if callCount != 1 {
+		t.Fatalf("expected 1 workflow call after duplicate, got %d", callCount)
+	}
+
+	releaseReq := httptest.NewRequest(http.MethodPost, "/internal/webhooks/audit/evt_credit_release/replay-release", nil)
+	releaseResp := httptest.NewRecorder()
+	srv.ServeHTTP(releaseResp, releaseReq)
+
+	if releaseResp.Code != http.StatusAccepted {
+		t.Fatalf("expected release status %d, got %d", http.StatusAccepted, releaseResp.Code)
+	}
+
+	if status := send(); status != http.StatusAccepted {
+		t.Fatalf("expected replayed webhook accepted, got %d", status)
+	}
+	if callCount != 2 {
+		t.Fatalf("expected 2 workflow calls after replay release, got %d", callCount)
+	}
+
+	record, ok, err := auditStore.Get(context.Background(), "evt_credit_release")
+	if err != nil || !ok {
+		t.Fatalf("expected audit record after replay release, ok=%v err=%v", ok, err)
+	}
+	if record.ReplayReleasedAt == "" {
+		t.Fatal("expected replay released timestamp to be stored")
+	}
+}
+
 func testWebhookSignature(secret string, body []byte) string {
 	mac := hmac.New(sha256.New, []byte(secret))
 	_, _ = mac.Write(body)

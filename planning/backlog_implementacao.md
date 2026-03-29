@@ -333,16 +333,24 @@ Objetivo: garantir repetibilidade, confianca e evolucao continua.
 
 ### Ciclo atual
 
-- Identificador: ciclo-16
+- Identificador: ciclo-17
 - Status: aberto
-- Objetivo: endurecer operacao distribuida e rastreabilidade fim a fim dos parceiros
+- Objetivo: endurecer governanca operacional dos callbacks e sua rastreabilidade
 - Itens priorizados:
   - preparar dashboards e operacao de fila para cenarios de erro mais agressivos
   - avaliar rate limit e politicas de replay por parceiro e por rota
-  - adicionar trilha de auditoria persistida para callbacks externos recebidos
-  - evoluir deduplicacao para suportar replay manual seguro e expiracao observavel
+  - adicionar enriquecimento e correlacao cruzada entre auditoria de callback e timeline da proposta
+  - expor expiracao e limpeza operacional dos registros de auditoria
 - Observacao:
-  - ciclo-15 fechou deduplicacao compartilhada em Redis e metricas do BFF por callback/parceiro
+  - ciclo-16 fechou auditoria persistida dos callbacks e replay-release manual no BFF
+
+## Entregas materializadas no ciclo-16
+
+- `BFF` com auditoria persistida dos callbacks em Redis quando configurado e fallback em memoria para testes;
+- endpoints internos `GET /internal/webhooks/audit` e `POST /internal/webhooks/audit/{eventId}/replay-release`;
+- preservacao do historico de liberacao manual mesmo apos novo processamento do mesmo evento;
+- novas configuracoes de prefixo e retencao para a trilha de auditoria de callbacks;
+- backlog reaberto para `ciclo-17` com foco em governanca e correlacao operacional.
 
 ## Entregas materializadas no ciclo-15
 
@@ -490,3 +498,4 @@ Objetivo: garantir repetibilidade, confianca e evolucao continua.
 | ciclo-13 | concluido | Webhook autenticado no BFF, inspecao e reprocessamento de DLQ e issuer OIDC mockado na stack local |
 | ciclo-14 | concluido | Callbacks externos de credito e fraude, pausa opcional do workflow e anti-replay no BFF |
 | ciclo-15 | concluido | Deduplicacao compartilhada em Redis no BFF e metricas de callbacks por parceiro |
+| ciclo-16 | concluido | Auditoria persistida dos callbacks e replay-release manual no BFF |

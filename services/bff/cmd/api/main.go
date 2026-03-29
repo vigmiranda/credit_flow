@@ -22,6 +22,10 @@ func main() {
 	if err != nil || cfg.RedisURL == "" {
 		replayStore = httpapi.NewMemoryWebhookReplayStore()
 	}
+	auditStore, err := httpapi.NewRedisWebhookAuditStore(cfg.RedisURL, cfg.WebhookAuditPrefix, cfg.WebhookAuditRetention)
+	if err != nil || cfg.RedisURL == "" {
+		auditStore = httpapi.NewMemoryWebhookAuditStore()
+	}
 	apiHandler := metrics.Wrap(httpapi.NewServerWithDependencies(
 		backend.NewClient(cfg.ProposalServiceURL),
 		backend.NewClient(cfg.CustomerServiceURL),
@@ -31,6 +35,7 @@ func main() {
 		cfg.WebhookSecret,
 		cfg.WebhookMaxAge,
 		replayStore,
+		auditStore,
 		metrics,
 	))
 

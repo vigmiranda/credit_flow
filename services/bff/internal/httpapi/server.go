@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -56,6 +57,7 @@ type server struct {
 	webhookSecret string
 	webhookMaxAge time.Duration
 	replay        WebhookReplayStore
+	audit         WebhookAuditStore
 	metrics       webhookMetricsRecorder
 }
 
@@ -155,13 +157,17 @@ func NewServer(proposals proposalGateway, customers customerGateway, documents d
 		webhookSecret,
 		webhookMaxAge,
 		NewMemoryWebhookReplayStore(),
+		NewMemoryWebhookAuditStore(),
 		nil,
 	)
 }
 
-func NewServerWithDependencies(proposals proposalGateway, customers customerGateway, documents documentGateway, workflow workflowGateway, notifications notificationGateway, webhookSecret string, webhookMaxAge time.Duration, replayStore WebhookReplayStore, metrics webhookMetricsRecorder) http.Handler {
+func NewServerWithDependencies(proposals proposalGateway, customers customerGateway, documents documentGateway, workflow workflowGateway, notifications notificationGateway, webhookSecret string, webhookMaxAge time.Duration, replayStore WebhookReplayStore, auditStore WebhookAuditStore, metrics webhookMetricsRecorder) http.Handler {
 	if replayStore == nil {
 		replayStore = NewMemoryWebhookReplayStore()
+	}
+	if auditStore == nil {
+		auditStore = NewMemoryWebhookAuditStore()
 	}
 
 	return &server{
@@ -173,6 +179,7 @@ func NewServerWithDependencies(proposals proposalGateway, customers customerGate
 		webhookSecret: webhookSecret,
 		webhookMaxAge: webhookMaxAge,
 		replay:        replayStore,
+		audit:         auditStore,
 		metrics:       metrics,
 	}
 }
@@ -202,6 +209,12 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	case r.Method == http.MethodPost && r.URL.Path == "/api/v1/webhooks/partners/fraud-analysis":
 		s.handleAnalysisWebhook(w, r, correlationID, "fraud")
+		return
+	case r.Method == http.MethodGet && r.URL.Path == "/internal/webhooks/audit":
+		s.listWebhookAudit(w, r, correlationID)
+		return
+	case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/internal/webhooks/audit/") && strings.HasSuffix(r.URL.Path, "/replay-release"):
+		s.releaseWebhookReplay(w, r, correlationID)
 		return
 	case strings.HasPrefix(r.URL.Path, "/api/v1/proposals/"):
 		s.handleProposalRoutes(w, r, correlationID)
@@ -470,13 +483,16 @@ func (s *server) handleStorageDocumentUploaded(w http.ResponseWriter, r *http.Re
 		writeError(w, http.StatusBadRequest, correlationID, "invalid_request", "payload invalido", nil)
 		return
 	}
+	audit := newWebhookAuditRecord("storage", correlationID, r, rawBody, s.webhookMaxAge)
 
 	replayStatus, release, err := s.validateWebhookRequest(r, rawBody)
 	if err != nil {
+		s.auditWebhook(r.Context(), audit.failed(validationErrorCode(err), validationErrorMessage(err)))
 		s.writeWebhookValidationError(w, correlationID, err)
 		return
 	}
 	if replayStatus == "duplicate_ignored" {
+		s.auditWebhook(r.Context(), audit.withReplayStatus(replayStatus).processed())
 		s.recordWebhookMetric("storage", "", replayStatus)
 		writeJSON(w, http.StatusAccepted, map[string]any{
 			"status":        "accepted",
@@ -517,6 +533,7 @@ func (s *server) handleStorageDocumentUploaded(w http.ResponseWriter, r *http.Re
 	var proposal backend.Proposal
 	s.completeDocumentFlow(r.Context(), payload.ProposalID, correlationID, &proposal)
 	processed = true
+	s.auditWebhook(r.Context(), audit.withReplayStatus(replayStatus).withPayload(payload.ProposalID, payload.DocumentID, payload.Provider, payload.EventType).processed())
 	s.recordWebhookMetric("storage", payload.Provider, replayStatus)
 
 	writeJSON(w, http.StatusAccepted, map[string]any{
@@ -535,13 +552,16 @@ func (s *server) handleAnalysisWebhook(w http.ResponseWriter, r *http.Request, c
 		writeError(w, http.StatusBadRequest, correlationID, "invalid_request", "payload invalido", nil)
 		return
 	}
+	audit := newWebhookAuditRecord(analysisType, correlationID, r, rawBody, s.webhookMaxAge)
 
 	replayStatus, release, err := s.validateWebhookRequest(r, rawBody)
 	if err != nil {
+		s.auditWebhook(r.Context(), audit.failed(validationErrorCode(err), validationErrorMessage(err)))
 		s.writeWebhookValidationError(w, correlationID, err)
 		return
 	}
 	if replayStatus == "duplicate_ignored" {
+		s.auditWebhook(r.Context(), audit.withReplayStatus(replayStatus).processed())
 		s.recordWebhookMetric(analysisType, "", replayStatus)
 		writeJSON(w, http.StatusAccepted, map[string]any{
 			"status":        "accepted",
@@ -586,11 +606,73 @@ func (s *server) handleAnalysisWebhook(w http.ResponseWriter, r *http.Request, c
 		return
 	}
 	processed = true
+	s.auditWebhook(r.Context(), audit.withReplayStatus(replayStatus).withPayload(payload.ProposalID, "", payload.Provider, payload.EventType).processed())
 	s.recordWebhookMetric(analysisType, payload.Provider, replayStatus)
 
 	workflowResponse["status"] = "accepted"
 	workflowResponse["replay_status"] = replayStatus
 	writeJSON(w, http.StatusAccepted, workflowResponse)
+}
+
+func (s *server) listWebhookAudit(w http.ResponseWriter, r *http.Request, correlationID string) {
+	limit := 50
+	if rawLimit := strings.TrimSpace(r.URL.Query().Get("limit")); rawLimit != "" {
+		if parsed, err := strconv.Atoi(rawLimit); err == nil {
+			limit = parsed
+		}
+	}
+
+	records, err := s.audit.List(r.Context(), WebhookAuditFilter{
+		EventID:      strings.TrimSpace(r.URL.Query().Get("event_id")),
+		CallbackType: strings.TrimSpace(r.URL.Query().Get("callback_type")),
+		ProposalID:   strings.TrimSpace(r.URL.Query().Get("proposal_id")),
+		Limit:        limit,
+	})
+	if err != nil {
+		writeError(w, http.StatusBadGateway, correlationID, "upstream_error", "falha ao consultar auditoria de webhooks", nil)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"count":   len(records),
+		"records": records,
+	})
+}
+
+func (s *server) releaseWebhookReplay(w http.ResponseWriter, r *http.Request, correlationID string) {
+	trimmed := strings.TrimPrefix(r.URL.Path, "/internal/webhooks/audit/")
+	segments := strings.Split(strings.Trim(trimmed, "/"), "/")
+	if len(segments) != 2 || segments[0] == "" || segments[1] != "replay-release" {
+		writeError(w, http.StatusNotFound, correlationID, "not_found", "rota nao encontrada", nil)
+		return
+	}
+
+	eventID := segments[0]
+	record, ok, err := s.audit.Get(r.Context(), eventID)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, correlationID, "upstream_error", "falha ao consultar auditoria de webhook", nil)
+		return
+	}
+	if !ok {
+		writeError(w, http.StatusNotFound, correlationID, "not_found", "evento de webhook nao encontrado", nil)
+		return
+	}
+
+	if err := s.replay.Release(r.Context(), eventID); err != nil {
+		writeError(w, http.StatusBadGateway, correlationID, "upstream_error", "falha ao liberar replay do webhook", nil)
+		return
+	}
+	if err := s.audit.MarkReplayReleased(r.Context(), eventID, time.Now().UTC()); err != nil {
+		writeError(w, http.StatusBadGateway, correlationID, "upstream_error", "falha ao atualizar auditoria do replay", nil)
+		return
+	}
+
+	writeJSON(w, http.StatusAccepted, map[string]any{
+		"status":        "accepted",
+		"event_id":      eventID,
+		"callback_type": record.CallbackType,
+		"replay_status": "released",
+	})
 }
 
 func (s *server) triggerWorkflow(proposalID, correlationID string) {
@@ -796,4 +878,19 @@ func (s *server) recordWebhookMetric(callbackType, provider, replayStatus string
 	}
 
 	s.metrics.RecordWebhook(callbackType, provider, replayStatus)
+}
+
+func (s *server) auditWebhook(ctx context.Context, record WebhookAuditRecord) {
+	if s.audit == nil || strings.TrimSpace(record.EventID) == "" {
+		return
+	}
+	if existing, ok, err := s.audit.Get(ctx, record.EventID); err == nil && ok {
+		if record.ReplayReleasedAt == "" {
+			record.ReplayReleasedAt = existing.ReplayReleasedAt
+		}
+		if record.LastReplayAction == "" {
+			record.LastReplayAction = existing.LastReplayAction
+		}
+	}
+	_ = s.audit.Upsert(ctx, record)
 }

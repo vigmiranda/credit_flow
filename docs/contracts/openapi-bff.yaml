@@ -254,6 +254,58 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "400":
           $ref: "#/components/responses/BadRequest"
+  /internal/webhooks/audit:
+    get:
+      summary: Listar auditoria de callbacks recebidos
+      operationId: listWebhookAudit
+      parameters:
+        - name: event_id
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: callback_type
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [storage, credit, fraud]
+        - name: proposal_id
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Registros de auditoria encontrados
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebhookAuditListResponse"
+  /internal/webhooks/audit/{eventId}/replay-release:
+    post:
+      summary: Liberar manualmente o replay de um callback
+      operationId: releaseWebhookReplay
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "202":
+          description: Replay liberado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReplayReleaseResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
 components:
   parameters:
     ProposalId:
@@ -654,3 +706,66 @@ components:
           type: string
         proposal_status:
           type: string
+    WebhookAuditRecord:
+      type: object
+      properties:
+        event_id:
+          type: string
+        callback_type:
+          type: string
+        correlation_id:
+          type: string
+        proposal_id:
+          type: string
+        document_id:
+          type: string
+        provider:
+          type: string
+        event_type:
+          type: string
+        replay_status:
+          type: string
+        processing_status:
+          type: string
+        error_code:
+          type: string
+        error_message:
+          type: string
+        received_at:
+          type: string
+          format: date-time
+        processed_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+        replay_released_at:
+          type: string
+          format: date-time
+        last_replay_action:
+          type: string
+    WebhookAuditListResponse:
+      type: object
+      required: [count, records]
+      properties:
+        count:
+          type: integer
+        records:
+          type: array
+          items:
+            $ref: "#/components/schemas/WebhookAuditRecord"
+    ReplayReleaseResponse:
+      type: object
+      required: [status, event_id, callback_type, replay_status]
+      properties:
+        status:
+          type: string
+          example: accepted
+        event_id:
+          type: string
+        callback_type:
+          type: string
+        replay_status:
+          type: string
+          example: released

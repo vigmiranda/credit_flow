@@ -45,6 +45,7 @@ docker compose -f infra/docker/docker-compose.yml up -d --build
 - a inspecao da DLQ fica disponivel em `GET http://localhost:18084/internal/dlq` e o reprocessamento em `POST http://localhost:18084/internal/dlq/reprocess`;
 - os callbacks externos podem ser ligados por `WORKFLOW_EXTERNAL_CREDIT_CALLBACKS=true` e `WORKFLOW_EXTERNAL_FRAUD_CALLBACKS=true`;
 - o `BFF` usa `redis://redis:6379/2` na stack Docker para deduplicacao compartilhada dos webhooks;
+- o `BFF` persiste auditoria em Redis com prefixo `bff:webhook:audit` e retencao configuravel por `BFF_WEBHOOK_AUDIT_RETENTION_SECONDS`;
 - as notificacoes do `notification service` sao entregues por SMTP local no Mailpit;
 - o front sobe em modo `oidc` contra o `mock-oidc`, mas pode voltar para `AUTH_MODE=mock` se necessario;
 - `scripts/smoke_docker_stack.ps1` valida a stack Docker ponta a ponta sem precisar subir processos Go manuais;
