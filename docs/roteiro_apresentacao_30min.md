@@ -25,9 +25,10 @@ Construimos um `slice vertical` demonstravel para propostas de cartao, com jorna
 2. O que foi entregue .......................... 4 min
 3. Tecnologias usadas e por que ................ 5 min
 4. Arquitetura e decisoes-chave ................ 8 min
-5. Fluxo ponta a ponta ......................... 5 min
-6. Operacao, seguranca e observabilidade ....... 3 min
-7. Encerramento, limites e proximos passos ..... 2 min
+5. Como isso evolui para AWS real .............. 4 min
+6. Fluxo ponta a ponta ......................... 4 min
+7. Operacao, seguranca e observabilidade ....... 3 min
+8. Encerramento, limites e proximos passos ..... 2 min
 ```
 
 ---
@@ -223,6 +224,42 @@ Web
 
 ## 5. Fluxo ponta a ponta
 
+## 5. Como isso evolui para AWS real
+
+Referencia de apoio:
+
+- `docs/arquitetura_aws_referencia.md`
+
+### Fala sugerida
+
+`O ponto importante e que nao desenhamos uma arquitetura local descartavel. O que fizemos no MVP pode ser mapeado quase diretamente para uma implementacao real na AWS, trocando componentes locais por servicos gerenciados equivalentes.`
+
+## Mapeamento principal
+
+- `MinIO` vira `Amazon S3`
+- `Mailpit` vira `Amazon SES`
+- `mock-oidc` vira `Amazon Cognito` ou federacao com IdP corporativo
+- `PostgreSQL` vira `Aurora PostgreSQL` ou `RDS PostgreSQL`
+- `Redis` deixa de ser fila principal e passa a ficar mais focado em dedupe e rate limit via `ElastiCache Redis`
+- fila principal do workflow vai para `Amazon SQS` com `DLQ`
+- `web`, `bff` e servicos Go sobem em `ECS Fargate`
+
+## Mensagem-chave
+
+`Nao muda a responsabilidade de cada bloco. Muda apenas a implementacao da infraestrutura para um ambiente real e gerenciado.`
+
+## Como responder por que ECS Fargate
+
+`Porque ja temos servicos containerizados, separados por dominio, e queremos manter consistencia com o desenho atual sem trazer a complexidade de Kubernetes logo de inicio.`
+
+## Como responder por que SQS e nao Redis como fila principal
+
+`Porque em AWS o SQS oferece uma separacao mais limpa da responsabilidade de mensageria, com retry e DLQ mais naturais para o contexto do workflow.`
+
+---
+
+## 6. Fluxo ponta a ponta
+
 ### Narrativa sugerida
 
 `O operador acessa o front, faz login, cria uma proposta, salva os dados do cliente, registra um documento e envia o arquivo. O documento vai para o storage, o workflow inicia, processa analise documental, credito e fraude, persiste os resultados, atualiza o status da proposta e registra notificacoes. O BFF consolida tudo e devolve para o front uma visao unica da proposta, incluindo timeline e eventos operacionais.`
@@ -252,7 +289,7 @@ Web
 
 ---
 
-## 6. Seguranca, operacao e observabilidade
+## 7. Seguranca, operacao e observabilidade
 
 ## Seguranca minima implementada
 
@@ -289,7 +326,7 @@ Web
 
 ---
 
-## 7. Como apresentar a demo em 5 minutos
+## 8. Como apresentar a demo em 5 minutos
 
 ## Sequencia recomendada
 
@@ -313,7 +350,7 @@ Web
 
 ---
 
-## 8. Trade-offs assumidos
+## 9. Trade-offs assumidos
 
 ## O que simplificamos
 
@@ -336,7 +373,7 @@ Web
 
 ---
 
-## 9. Perguntas que provavelmente vao surgir
+## 10. Perguntas que provavelmente vao surgir
 
 ## Por que Go?
 
@@ -358,9 +395,13 @@ Web
 
 `Integracoes reais, observabilidade externa, endurecimento regulatorio, testes de carga, ambiente dedicado e operacao 24x7.`
 
+## Como isso ficaria em AWS?
+
+`Mantendo os mesmos dominios e a mesma separacao logica, mas substituindo os componentes locais por ECS Fargate, Aurora, S3, SQS, Cognito, SES, CloudWatch e ElastiCache Redis.`
+
 ---
 
-## 10. Fechamento da apresentacao
+## 11. Fechamento da apresentacao
 
 ### Fala sugerida
 
@@ -378,3 +419,4 @@ Web
 - `docs/handoff_operacional_mvp.md`
 - `docs/encerramento_mvp.md`
 - `docs/teste_manual_ponta_a_ponta.md`
+- `docs/arquitetura_aws_referencia.md`
