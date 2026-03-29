@@ -143,3 +143,4 @@ Pre-requisito:
 - Encerramento formal do MVP: `docs/encerramento_mvp.md`
 - Guia de teste manual E2E: `docs/teste_manual_ponta_a_ponta.md`
 - Roteiro de apresentacao de 30 min: `docs/roteiro_apresentacao_30min.md`
+- Diagrama da arquitetura do MVP: `docs/diagrama_arquitetura_mvp.md`

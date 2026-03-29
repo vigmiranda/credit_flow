@@ -155,6 +155,10 @@ Separar a jornada em blocos com responsabilidade clara, sem exagerar na complexi
 
 ## Arquitetura escolhida
 
+Referencia visual:
+
+- `docs/diagrama_arquitetura_mvp.md`
+
 ```text
 Web
   -> BFF
