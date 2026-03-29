@@ -187,10 +187,16 @@ services:
       NOTIFICATION_SERVICE_URL: http://notification:8087
       BFF_WEBHOOK_SECRET: credit-flow-local-webhook-secret
       BFF_WEBHOOK_MAX_AGE_SECONDS: "300"
+      BFF_STORAGE_WEBHOOK_MAX_AGE_SECONDS: "300"
+      BFF_CREDIT_WEBHOOK_MAX_AGE_SECONDS: "300"
+      BFF_FRAUD_WEBHOOK_MAX_AGE_SECONDS: "300"
       BFF_REDIS_URL: redis://redis:6379/2
       BFF_WEBHOOK_REPLAY_PREFIX: bff:webhook:events
       BFF_WEBHOOK_AUDIT_PREFIX: bff:webhook:audit
       BFF_WEBHOOK_AUDIT_RETENTION_SECONDS: "604800"
+      BFF_ALLOWED_STORAGE_PROVIDERS: minio
+      BFF_ALLOWED_CREDIT_PROVIDERS: partner-credit
+      BFF_ALLOWED_FRAUD_PROVIDERS: partner-fraud
     depends_on:
       proposal:
         condition: service_started

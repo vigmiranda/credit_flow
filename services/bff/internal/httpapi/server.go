@@ -56,9 +56,24 @@ type server struct {
 	notifications notificationGateway
 	webhookSecret string
 	webhookMaxAge time.Duration
+	policies      map[string]webhookPolicy
 	replay        WebhookReplayStore
 	audit         WebhookAuditStore
 	metrics       webhookMetricsRecorder
+}
+
+type WebhookPolicyConfig struct {
+	StorageMaxAge           time.Duration
+	CreditMaxAge            time.Duration
+	FraudMaxAge             time.Duration
+	AllowedStorageProviders []string
+	AllowedCreditProviders  []string
+	AllowedFraudProviders   []string
+}
+
+type webhookPolicy struct {
+	maxAge           time.Duration
+	allowedProviders map[string]struct{}
 }
 
 type webhookMetricsRecorder interface {
@@ -91,6 +106,7 @@ type proposalResponse struct {
 	AnalysisResults []backend.AnalysisResult     `json:"analysis_results,omitempty"`
 	StatusHistory   []backend.StatusHistoryEntry `json:"status_history,omitempty"`
 	Notifications   []backend.Notification       `json:"notifications,omitempty"`
+	WebhookAudit    []WebhookAuditRecord         `json:"webhook_audit,omitempty"`
 	CreatedAt       string                       `json:"created_at"`
 	UpdatedAt       string                       `json:"updated_at"`
 }
@@ -163,6 +179,22 @@ func NewServer(proposals proposalGateway, customers customerGateway, documents d
 }
 
 func NewServerWithDependencies(proposals proposalGateway, customers customerGateway, documents documentGateway, workflow workflowGateway, notifications notificationGateway, webhookSecret string, webhookMaxAge time.Duration, replayStore WebhookReplayStore, auditStore WebhookAuditStore, metrics webhookMetricsRecorder) http.Handler {
+	return NewServerWithPolicyConfig(
+		proposals,
+		customers,
+		documents,
+		workflow,
+		notifications,
+		webhookSecret,
+		webhookMaxAge,
+		replayStore,
+		auditStore,
+		metrics,
+		WebhookPolicyConfig{},
+	)
+}
+
+func NewServerWithPolicyConfig(proposals proposalGateway, customers customerGateway, documents documentGateway, workflow workflowGateway, notifications notificationGateway, webhookSecret string, webhookMaxAge time.Duration, replayStore WebhookReplayStore, auditStore WebhookAuditStore, metrics webhookMetricsRecorder, policyConfig WebhookPolicyConfig) http.Handler {
 	if replayStore == nil {
 		replayStore = NewMemoryWebhookReplayStore()
 	}
@@ -178,6 +210,7 @@ func NewServerWithDependencies(proposals proposalGateway, customers customerGate
 		notifications: notifications,
 		webhookSecret: webhookSecret,
 		webhookMaxAge: webhookMaxAge,
+		policies:      newWebhookPolicies(webhookMaxAge, policyConfig),
 		replay:        replayStore,
 		audit:         auditStore,
 		metrics:       metrics,
@@ -212,6 +245,9 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	case r.Method == http.MethodGet && r.URL.Path == "/internal/webhooks/audit":
 		s.listWebhookAudit(w, r, correlationID)
+		return
+	case r.Method == http.MethodPost && r.URL.Path == "/internal/webhooks/audit/cleanup":
+		s.cleanupWebhookAudit(w, r, correlationID)
 		return
 	case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/internal/webhooks/audit/") && strings.HasSuffix(r.URL.Path, "/replay-release"):
 		s.releaseWebhookReplay(w, r, correlationID)
@@ -331,6 +367,14 @@ func (s *server) getProposal(w http.ResponseWriter, r *http.Request, correlation
 	var notifications backend.NotificationList
 	if _, err := s.notifications.Get(r.Context(), "/internal/proposals/"+proposalID+"/notifications", correlationID, &notifications); err == nil {
 		response.Notifications = maskNotifications(notifications.Notifications)
+	}
+	if s.audit != nil {
+		if records, err := s.audit.List(r.Context(), WebhookAuditFilter{
+			ProposalID: proposalID,
+			Limit:      100,
+		}); err == nil {
+			response.WebhookAudit = records
+		}
 	}
 
 	writeJSON(w, http.StatusOK, response)
@@ -483,11 +527,12 @@ func (s *server) handleStorageDocumentUploaded(w http.ResponseWriter, r *http.Re
 		writeError(w, http.StatusBadRequest, correlationID, "invalid_request", "payload invalido", nil)
 		return
 	}
-	audit := newWebhookAuditRecord("storage", correlationID, r, rawBody, s.webhookMaxAge)
+	audit := newWebhookAuditRecord("storage", correlationID, r, rawBody, s.resolveWebhookMaxAge("storage"))
 
-	replayStatus, release, err := s.validateWebhookRequest(r, rawBody)
+	replayStatus, release, err := s.validateWebhookRequest(r, rawBody, "storage")
 	if err != nil {
 		s.auditWebhook(r.Context(), audit.failed(validationErrorCode(err), validationErrorMessage(err)))
+		s.recordWebhookMetric("storage", audit.Provider, validationErrorCode(err))
 		s.writeWebhookValidationError(w, correlationID, err)
 		return
 	}
@@ -515,6 +560,12 @@ func (s *server) handleStorageDocumentUploaded(w http.ResponseWriter, r *http.Re
 		writeError(w, http.StatusBadRequest, correlationID, "invalid_request", "campos obrigatorios ausentes", map[string]any{
 			"required_fields": []string{"proposal_id", "document_id"},
 		})
+		return
+	}
+	if err := s.validateWebhookProvider("storage", payload.Provider); err != nil {
+		s.auditWebhook(r.Context(), audit.withPayload(payload.ProposalID, payload.DocumentID, payload.Provider, payload.EventType).failed(validationErrorCode(err), validationErrorMessage(err)))
+		s.recordWebhookMetric("storage", payload.Provider, validationErrorCode(err))
+		s.writeWebhookValidationError(w, correlationID, err)
 		return
 	}
 
@@ -552,11 +603,12 @@ func (s *server) handleAnalysisWebhook(w http.ResponseWriter, r *http.Request, c
 		writeError(w, http.StatusBadRequest, correlationID, "invalid_request", "payload invalido", nil)
 		return
 	}
-	audit := newWebhookAuditRecord(analysisType, correlationID, r, rawBody, s.webhookMaxAge)
+	audit := newWebhookAuditRecord(analysisType, correlationID, r, rawBody, s.resolveWebhookMaxAge(analysisType))
 
-	replayStatus, release, err := s.validateWebhookRequest(r, rawBody)
+	replayStatus, release, err := s.validateWebhookRequest(r, rawBody, analysisType)
 	if err != nil {
 		s.auditWebhook(r.Context(), audit.failed(validationErrorCode(err), validationErrorMessage(err)))
+		s.recordWebhookMetric(analysisType, audit.Provider, validationErrorCode(err))
 		s.writeWebhookValidationError(w, correlationID, err)
 		return
 	}
@@ -584,6 +636,12 @@ func (s *server) handleAnalysisWebhook(w http.ResponseWriter, r *http.Request, c
 		writeError(w, http.StatusBadRequest, correlationID, "invalid_request", "campos obrigatorios ausentes", map[string]any{
 			"required_fields": []string{"proposal_id", "result"},
 		})
+		return
+	}
+	if err := s.validateWebhookProvider(analysisType, payload.Provider); err != nil {
+		s.auditWebhook(r.Context(), audit.withPayload(payload.ProposalID, "", payload.Provider, payload.EventType).failed(validationErrorCode(err), validationErrorMessage(err)))
+		s.recordWebhookMetric(analysisType, payload.Provider, validationErrorCode(err))
+		s.writeWebhookValidationError(w, correlationID, err)
 		return
 	}
 
@@ -636,6 +694,30 @@ func (s *server) listWebhookAudit(w http.ResponseWriter, r *http.Request, correl
 	writeJSON(w, http.StatusOK, map[string]any{
 		"count":   len(records),
 		"records": records,
+	})
+}
+
+func (s *server) cleanupWebhookAudit(w http.ResponseWriter, r *http.Request, correlationID string) {
+	processedAt := time.Now().UTC().Format(time.RFC3339)
+	if s.audit == nil {
+		writeJSON(w, http.StatusAccepted, map[string]any{
+			"status":       "accepted",
+			"removed":      0,
+			"processed_at": processedAt,
+		})
+		return
+	}
+
+	removed, err := s.audit.CleanupExpired(r.Context(), time.Now().UTC())
+	if err != nil {
+		writeError(w, http.StatusBadGateway, correlationID, "upstream_error", "falha ao limpar auditoria de webhooks", nil)
+		return
+	}
+
+	writeJSON(w, http.StatusAccepted, map[string]any{
+		"status":       "accepted",
+		"removed":      removed,
+		"processed_at": processedAt,
 	})
 }
 
@@ -784,7 +866,7 @@ func verifyWebhookSignature(secret string, body []byte, provided string) bool {
 	return hmac.Equal(decoded, expected)
 }
 
-func (s *server) validateWebhookRequest(r *http.Request, body []byte) (string, func(bool), error) {
+func (s *server) validateWebhookRequest(r *http.Request, body []byte, callbackType string) (string, func(bool), error) {
 	if !verifyWebhookSignature(s.webhookSecret, body, r.Header.Get(headerWebhookSig)) {
 		return "", nil, errInvalidWebhookSignature
 	}
@@ -799,15 +881,16 @@ func (s *server) validateWebhookRequest(r *http.Request, body []byte) (string, f
 		return "", nil, errInvalidWebhookTimestamp
 	}
 
-	if s.webhookMaxAge > 0 {
+	maxAge := s.resolveWebhookMaxAge(callbackType)
+	if maxAge > 0 {
 		now := time.Now().UTC()
-		if timestamp.After(now.Add(30*time.Second)) || now.Sub(timestamp) > s.webhookMaxAge {
+		if timestamp.After(now.Add(30*time.Second)) || now.Sub(timestamp) > maxAge {
 			return "", nil, errStaleWebhookTimestamp
 		}
 	}
 
-	expiresAt := timestamp.Add(s.webhookMaxAge)
-	if s.webhookMaxAge <= 0 {
+	expiresAt := timestamp.Add(maxAge)
+	if maxAge <= 0 {
 		expiresAt = time.Now().UTC().Add(5 * time.Minute)
 	}
 	duplicate, err := s.replay.Mark(r.Context(), eventID, expiresAt)
@@ -846,6 +929,7 @@ var (
 	errInvalidWebhookTimestamp   = errorString("invalid_timestamp")
 	errStaleWebhookTimestamp     = errorString("stale_timestamp")
 	errMissingWebhookEventID     = errorString("missing_event_id")
+	errWebhookProviderNotAllowed = errorString("invalid_provider")
 	errInvalidWebhookReplayStore = errorString("replay_store_error")
 )
 
@@ -865,6 +949,8 @@ func (s *server) writeWebhookValidationError(w http.ResponseWriter, correlationI
 		writeError(w, http.StatusBadRequest, correlationID, "invalid_request", "header X-Webhook-Timestamp invalido", nil)
 	case errStaleWebhookTimestamp:
 		writeError(w, http.StatusUnauthorized, correlationID, "stale_webhook", "timestamp do webhook fora da janela aceita", nil)
+	case errWebhookProviderNotAllowed:
+		writeError(w, http.StatusUnauthorized, correlationID, "invalid_provider", "provedor do webhook nao permitido para esta rota", nil)
 	case errInvalidWebhookReplayStore:
 		writeError(w, http.StatusBadGateway, correlationID, "upstream_error", "falha ao persistir deduplicacao do webhook", nil)
 	default:
@@ -885,6 +971,12 @@ func (s *server) auditWebhook(ctx context.Context, record WebhookAuditRecord) {
 		return
 	}
 	if existing, ok, err := s.audit.Get(ctx, record.EventID); err == nil && ok {
+		if record.ExpiresAt == "" {
+			record.ExpiresAt = existing.ExpiresAt
+		}
+		if record.RetentionExpiresAt == "" {
+			record.RetentionExpiresAt = existing.RetentionExpiresAt
+		}
 		if record.ReplayReleasedAt == "" {
 			record.ReplayReleasedAt = existing.ReplayReleasedAt
 		}
@@ -893,4 +985,69 @@ func (s *server) auditWebhook(ctx context.Context, record WebhookAuditRecord) {
 		}
 	}
 	_ = s.audit.Upsert(ctx, record)
+}
+
+func newWebhookPolicies(defaultMaxAge time.Duration, config WebhookPolicyConfig) map[string]webhookPolicy {
+	return map[string]webhookPolicy{
+		"storage": {
+			maxAge:           firstNonZeroDuration(config.StorageMaxAge, defaultMaxAge),
+			allowedProviders: newProviderSet(config.AllowedStorageProviders),
+		},
+		"credit": {
+			maxAge:           firstNonZeroDuration(config.CreditMaxAge, defaultMaxAge),
+			allowedProviders: newProviderSet(config.AllowedCreditProviders),
+		},
+		"fraud": {
+			maxAge:           firstNonZeroDuration(config.FraudMaxAge, defaultMaxAge),
+			allowedProviders: newProviderSet(config.AllowedFraudProviders),
+		},
+	}
+}
+
+func (s *server) resolveWebhookMaxAge(callbackType string) time.Duration {
+	if policy, ok := s.policies[strings.TrimSpace(callbackType)]; ok && policy.maxAge > 0 {
+		return policy.maxAge
+	}
+	return s.webhookMaxAge
+}
+
+func (s *server) validateWebhookProvider(callbackType, provider string) error {
+	policy, ok := s.policies[strings.TrimSpace(callbackType)]
+	if !ok || len(policy.allowedProviders) == 0 {
+		return nil
+	}
+	if _, allowed := policy.allowedProviders[strings.TrimSpace(provider)]; allowed {
+		return nil
+	}
+	return errWebhookProviderNotAllowed
+}
+
+func newProviderSet(values []string) map[string]struct{} {
+	if len(values) == 0 {
+		return nil
+	}
+
+	providers := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" {
+			continue
+		}
+		providers[trimmed] = struct{}{}
+	}
+
+	if len(providers) == 0 {
+		return nil
+	}
+
+	return providers
+}
+
+func firstNonZeroDuration(values ...time.Duration) time.Duration {
+	for _, value := range values {
+		if value > 0 {
+			return value
+		}
+	}
+	return 0
 }

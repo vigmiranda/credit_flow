@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -19,9 +20,17 @@ type Config struct {
 	WebhookReplayPrefix    string
 	WebhookAuditPrefix     string
 	WebhookAuditRetention  time.Duration
+	StorageWebhookMaxAge   time.Duration
+	CreditWebhookMaxAge    time.Duration
+	FraudWebhookMaxAge     time.Duration
+	StorageProviders       []string
+	CreditProviders        []string
+	FraudProviders         []string
 }
 
 func Load() Config {
+	defaultWebhookMaxAge := time.Duration(getEnvInt("BFF_WEBHOOK_MAX_AGE_SECONDS", 300)) * time.Second
+
 	return Config{
 		Port:                   getEnv("BFF_PORT", getEnv("PORT", "8080")),
 		ProposalServiceURL:     getEnv("PROPOSAL_SERVICE_URL", "http://localhost:8081"),
@@ -30,11 +39,17 @@ func Load() Config {
 		WorkflowServiceURL:     getEnv("WORKFLOW_SERVICE_URL", "http://localhost:8084"),
 		NotificationServiceURL: getEnv("NOTIFICATION_SERVICE_URL", "http://localhost:8087"),
 		WebhookSecret:          getEnv("BFF_WEBHOOK_SECRET", ""),
-		WebhookMaxAge:          time.Duration(getEnvInt("BFF_WEBHOOK_MAX_AGE_SECONDS", 300)) * time.Second,
+		WebhookMaxAge:          defaultWebhookMaxAge,
 		RedisURL:               getEnv("BFF_REDIS_URL", getEnv("REDIS_URL", "")),
 		WebhookReplayPrefix:    getEnv("BFF_WEBHOOK_REPLAY_PREFIX", "bff:webhook:events"),
 		WebhookAuditPrefix:     getEnv("BFF_WEBHOOK_AUDIT_PREFIX", "bff:webhook:audit"),
 		WebhookAuditRetention:  time.Duration(getEnvInt("BFF_WEBHOOK_AUDIT_RETENTION_SECONDS", 604800)) * time.Second,
+		StorageWebhookMaxAge:   time.Duration(getEnvInt("BFF_STORAGE_WEBHOOK_MAX_AGE_SECONDS", int(defaultWebhookMaxAge.Seconds()))) * time.Second,
+		CreditWebhookMaxAge:    time.Duration(getEnvInt("BFF_CREDIT_WEBHOOK_MAX_AGE_SECONDS", int(defaultWebhookMaxAge.Seconds()))) * time.Second,
+		FraudWebhookMaxAge:     time.Duration(getEnvInt("BFF_FRAUD_WEBHOOK_MAX_AGE_SECONDS", int(defaultWebhookMaxAge.Seconds()))) * time.Second,
+		StorageProviders:       getEnvList("BFF_ALLOWED_STORAGE_PROVIDERS"),
+		CreditProviders:        getEnvList("BFF_ALLOWED_CREDIT_PROVIDERS"),
+		FraudProviders:         getEnvList("BFF_ALLOWED_FRAUD_PROVIDERS"),
 	}
 }
 
@@ -58,4 +73,23 @@ func getEnvInt(key string, fallback int) int {
 	}
 
 	return parsed
+}
+
+func getEnvList(key string) []string {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return nil
+	}
+
+	parts := strings.Split(value, ",")
+	values := make([]string, 0, len(parts))
+	for _, part := range parts {
+		trimmed := strings.TrimSpace(part)
+		if trimmed == "" {
+			continue
+		}
+		values = append(values, trimmed)
+	}
+
+	return values
 }

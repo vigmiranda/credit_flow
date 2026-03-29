@@ -842,6 +842,192 @@ func TestWebhookReplayReleaseAllowsManualReplay(t *testing.T) {
 	}
 }
 
+func TestGetProposalIncludesWebhookAudit(t *testing.T) {
+	auditStore := NewMemoryWebhookAuditStore()
+	if err := auditStore.Upsert(context.Background(), WebhookAuditRecord{
+		EventID:            "evt_credit_audit",
+		CallbackType:       "credit",
+		ProposalID:         "prop_123",
+		Provider:           "partner-credit",
+		EventType:          "analysis_completed",
+		ReplayStatus:       "processed",
+		ProcessingStatus:   "processed",
+		ReceivedAt:         "2026-03-29T12:00:00Z",
+		ProcessedAt:        "2026-03-29T12:00:01Z",
+		RetentionExpiresAt: "2026-04-05T12:00:00Z",
+	}); err != nil {
+		t.Fatalf("seed audit store: %v", err)
+	}
+
+	srv := NewServerWithDependencies(
+		stubProposalGateway{
+			getFunc: func(_ context.Context, path, _ string, out any) (int, error) {
+				if path != "/internal/proposals/prop_123" {
+					return 0, errors.New("unexpected proposal lookup")
+				}
+				proposal := out.(*backend.Proposal)
+				*proposal = backend.Proposal{
+					ProposalID: "prop_123",
+					Protocol:   "P-001",
+					Status:     "credit_analysis_in_progress",
+					CreatedAt:  "2026-03-29T11:00:00Z",
+					UpdatedAt:  "2026-03-29T12:00:00Z",
+				}
+				return http.StatusOK, nil
+			},
+			postFunc:  func(context.Context, string, string, any, any) (int, error) { return 0, errors.New("unexpected") },
+			patchFunc: func(context.Context, string, string, any, any) (int, error) { return 0, errors.New("unexpected") },
+		},
+		stubCustomerGateway{
+			postFunc: func(context.Context, string, string, any, any) (int, error) { return 0, errors.New("unexpected") },
+			getFunc:  func(context.Context, string, string, any) (int, error) { return 0, errors.New("not found") },
+		},
+		stubDocumentGateway{
+			postFunc: func(context.Context, string, string, any, any) (int, error) { return 0, errors.New("unexpected") },
+			getFunc:  func(context.Context, string, string, any) (int, error) { return 0, errors.New("not found") },
+			uploadFunc: func(context.Context, string, string, string, string, string, []byte, any) (int, error) {
+				return 0, errors.New("unexpected")
+			},
+		},
+		stubWorkflowGateway{
+			postFunc: func(context.Context, string, string, any, any) (int, error) { return 0, errors.New("unexpected") },
+		},
+		stubNotificationGateway{
+			postFunc: func(context.Context, string, string, any, any) (int, error) { return 0, errors.New("unexpected") },
+			getFunc:  func(context.Context, string, string, any) (int, error) { return 0, errors.New("not found") },
+		},
+		"",
+		time.Minute,
+		NewMemoryWebhookReplayStore(),
+		auditStore,
+		nil,
+	)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/proposals/prop_123", nil)
+	resp := httptest.NewRecorder()
+	srv.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, resp.Code)
+	}
+
+	var proposal proposalResponse
+	if err := json.NewDecoder(resp.Body).Decode(&proposal); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	if len(proposal.WebhookAudit) != 1 {
+		t.Fatalf("expected 1 webhook audit record, got %d", len(proposal.WebhookAudit))
+	}
+	if proposal.WebhookAudit[0].EventID != "evt_credit_audit" {
+		t.Fatalf("unexpected audit event id %s", proposal.WebhookAudit[0].EventID)
+	}
+}
+
+func TestAnalysisWebhookRejectsProviderOutsidePolicy(t *testing.T) {
+	auditStore := NewMemoryWebhookAuditStore()
+	srv := NewServerWithPolicyConfig(
+		stubProposalGateway{},
+		stubCustomerGateway{},
+		stubDocumentGateway{},
+		stubWorkflowGateway{
+			postFunc: func(context.Context, string, string, any, any) (int, error) {
+				t.Fatal("workflow should not be called for unauthorized provider")
+				return 0, nil
+			},
+		},
+		stubNotificationGateway{},
+		"local-webhook-secret",
+		5*time.Minute,
+		NewMemoryWebhookReplayStore(),
+		auditStore,
+		nil,
+		WebhookPolicyConfig{
+			AllowedCreditProviders: []string{"partner-credit"},
+		},
+	)
+
+	body := bytes.NewBufferString(`{"proposal_id":"prop_123","provider":"rogue-credit","result":"approved"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/partners/credit-analysis", body)
+	req.Header.Set(headerWebhookSig, testWebhookSignature("local-webhook-secret", body.Bytes()))
+	setWebhookHeaders(req, "evt_credit_policy", time.Now().UTC())
+	resp := httptest.NewRecorder()
+	srv.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status %d, got %d", http.StatusUnauthorized, resp.Code)
+	}
+
+	record, ok, err := auditStore.Get(context.Background(), "evt_credit_policy")
+	if err != nil || !ok {
+		t.Fatalf("expected audit record for rejected provider, ok=%v err=%v", ok, err)
+	}
+	if record.ErrorCode != "invalid_provider" {
+		t.Fatalf("expected invalid_provider audit code, got %s", record.ErrorCode)
+	}
+}
+
+func TestWebhookAuditCleanupRemovesExpiredRecords(t *testing.T) {
+	auditStore := NewMemoryWebhookAuditStore()
+	if err := auditStore.Upsert(context.Background(), WebhookAuditRecord{
+		EventID:            "evt_expired",
+		CallbackType:       "storage",
+		ProposalID:         "prop_123",
+		ReceivedAt:         "2026-03-29T10:00:00Z",
+		RetentionExpiresAt: time.Now().UTC().Add(-time.Minute).Format(time.RFC3339),
+	}); err != nil {
+		t.Fatalf("seed expired audit record: %v", err)
+	}
+	if err := auditStore.Upsert(context.Background(), WebhookAuditRecord{
+		EventID:            "evt_live",
+		CallbackType:       "credit",
+		ProposalID:         "prop_123",
+		ReceivedAt:         "2026-03-29T10:00:00Z",
+		RetentionExpiresAt: time.Now().UTC().Add(time.Hour).Format(time.RFC3339),
+	}); err != nil {
+		t.Fatalf("seed live audit record: %v", err)
+	}
+
+	srv := NewServerWithDependencies(
+		stubProposalGateway{},
+		stubCustomerGateway{},
+		stubDocumentGateway{},
+		stubWorkflowGateway{},
+		stubNotificationGateway{},
+		"",
+		time.Minute,
+		NewMemoryWebhookReplayStore(),
+		auditStore,
+		nil,
+	)
+
+	req := httptest.NewRequest(http.MethodPost, "/internal/webhooks/audit/cleanup", nil)
+	resp := httptest.NewRecorder()
+	srv.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusAccepted {
+		t.Fatalf("expected status %d, got %d", http.StatusAccepted, resp.Code)
+	}
+
+	var payload struct {
+		Removed int `json:"removed"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if payload.Removed != 1 {
+		t.Fatalf("expected 1 removed record, got %d", payload.Removed)
+	}
+
+	records, err := auditStore.List(context.Background(), WebhookAuditFilter{ProposalID: "prop_123", Limit: 10})
+	if err != nil {
+		t.Fatalf("list audit records: %v", err)
+	}
+	if len(records) != 1 || records[0].EventID != "evt_live" {
+		t.Fatalf("expected only live record after cleanup, got %+v", records)
+	}
+}
+
 func testWebhookSignature(secret string, body []byte) string {
 	mac := hmac.New(sha256.New, []byte(secret))
 	_, _ = mac.Write(body)

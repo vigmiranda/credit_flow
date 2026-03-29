@@ -85,6 +85,8 @@ func validationErrorCode(err error) string {
 		return "invalid_timestamp"
 	case errStaleWebhookTimestamp:
 		return "stale_webhook"
+	case errWebhookProviderNotAllowed:
+		return "invalid_provider"
 	case errInvalidWebhookReplayStore:
 		return "replay_store_error"
 	default:
@@ -102,6 +104,8 @@ func validationErrorMessage(err error) string {
 		return "header X-Webhook-Timestamp invalido"
 	case errStaleWebhookTimestamp:
 		return "timestamp do webhook fora da janela aceita"
+	case errWebhookProviderNotAllowed:
+		return "provedor do webhook nao permitido para esta rota"
 	case errInvalidWebhookReplayStore:
 		return "falha ao persistir deduplicacao do webhook"
 	default:

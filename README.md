@@ -112,8 +112,8 @@ Pre-requisito:
 - o `workflow` expoe `GET /internal/dlq` e `POST /internal/dlq/reprocess` para operacao local
 - o `BFF` aceita webhooks autenticados de `storage`, `credit` e `fraud`, com `event-id` e janela anti-replay
 - quando `BFF_REDIS_URL` estiver configurado, a deduplicacao dos webhooks passa a ser compartilhada entre replicas
-- `/metrics` do `BFF` agora inclui contadores de callbacks por tipo, parceiro e replay status
-- o `BFF` persiste auditoria dos callbacks e expoe `GET /internal/webhooks/audit` e `POST /internal/webhooks/audit/{eventId}/replay-release`
+- `/metrics` do `BFF` agora inclui contadores de callbacks por tipo, parceiro e status operacional
+- o `BFF` persiste auditoria dos callbacks, correlaciona essa trilha com `GET /api/v1/proposals/{proposalId}` e expoe `GET /internal/webhooks/audit`, `POST /internal/webhooks/audit/{eventId}/replay-release` e `POST /internal/webhooks/audit/cleanup`
 
 ## Seguranca minima atual
 
@@ -132,3 +132,4 @@ Pre-requisito:
 - Webhook de storage: `POST /api/v1/webhooks/storage/document-uploaded` com `X-Webhook-Signature: sha256=<hex>`
 - Webhook de credito: `POST /api/v1/webhooks/partners/credit-analysis`
 - Webhook de antifraude: `POST /api/v1/webhooks/partners/fraud-analysis`
+- Providers permitidos e janela por rota podem ser ajustados por `BFF_ALLOWED_*_PROVIDERS` e `BFF_*_WEBHOOK_MAX_AGE_SECONDS`

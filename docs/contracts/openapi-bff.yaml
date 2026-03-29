@@ -306,7 +306,18 @@ paths:
                 $ref: "#/components/schemas/ReplayReleaseResponse"
         "404":
           $ref: "#/components/responses/NotFound"
-components:
+  /internal/webhooks/audit/cleanup:
+    post:
+      summary: Limpar registros de auditoria expirados
+      operationId: cleanupWebhookAudit
+      responses:
+        "202":
+          description: Limpeza executada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebhookAuditCleanupResponse"
+  components:
   parameters:
     ProposalId:
       name: proposalId
@@ -420,6 +431,10 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/NotificationEntry"
+        webhook_audit:
+          type: array
+          items:
+            $ref: "#/components/schemas/WebhookAuditRecord"
         created_at:
           type: string
           format: date-time
@@ -740,6 +755,9 @@ components:
         expires_at:
           type: string
           format: date-time
+        retention_expires_at:
+          type: string
+          format: date-time
         replay_released_at:
           type: string
           format: date-time
@@ -769,3 +787,15 @@ components:
         replay_status:
           type: string
           example: released
+    WebhookAuditCleanupResponse:
+      type: object
+      required: [status, removed, processed_at]
+      properties:
+        status:
+          type: string
+          example: accepted
+        removed:
+          type: integer
+        processed_at:
+          type: string
+          format: date-time

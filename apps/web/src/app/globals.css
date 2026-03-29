@@ -456,6 +456,11 @@ select:focus {
   color: var(--primary-strong);
 }
 
+.timeline-webhook {
+  background: rgba(108, 89, 38, 0.14);
+  color: #6c5926;
+}
+
 .timeline-content {
   display: flex;
   flex-direction: column;

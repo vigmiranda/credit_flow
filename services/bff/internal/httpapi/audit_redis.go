@@ -33,6 +33,7 @@ func NewRedisWebhookAuditStore(redisURL, prefix string, retention time.Duration)
 }
 
 func (s *redisWebhookAuditStore) Upsert(ctx context.Context, record WebhookAuditRecord) error {
+	record = applyAuditRetention(record, s.retention)
 	key := s.recordKey(record.EventID)
 	if key == "" {
 		return nil
@@ -48,8 +49,16 @@ func (s *redisWebhookAuditStore) Upsert(ctx context.Context, record WebhookAudit
 		score = float64(parsed.Unix())
 	}
 
+	ttl := s.retention
+	if parsed, err := time.Parse(time.RFC3339, record.RetentionExpiresAt); err == nil {
+		ttl = time.Until(parsed)
+	}
+	if ttl <= 0 {
+		ttl = time.Minute
+	}
+
 	pipe := s.client.TxPipeline()
-	pipe.Set(ctx, key, raw, s.retention)
+	pipe.Set(ctx, key, raw, ttl)
 	pipe.ZAdd(ctx, s.indexKey(), redis.Z{Score: score, Member: strings.TrimSpace(record.EventID)})
 	_, err = pipe.Exec(ctx)
 	return err
@@ -114,6 +123,41 @@ func (s *redisWebhookAuditStore) MarkReplayReleased(ctx context.Context, eventID
 	record.ReplayReleasedAt = releasedAt.UTC().Format(time.RFC3339)
 	record.LastReplayAction = "released"
 	return s.Upsert(ctx, record)
+}
+
+func (s *redisWebhookAuditStore) CleanupExpired(ctx context.Context, now time.Time) (int, error) {
+	ids, err := s.client.ZRange(ctx, s.indexKey(), 0, -1).Result()
+	if err != nil {
+		return 0, err
+	}
+
+	removed := 0
+	for _, eventID := range ids {
+		record, ok, err := s.Get(ctx, eventID)
+		if err != nil {
+			return removed, err
+		}
+		if !ok {
+			if err := s.client.ZRem(ctx, s.indexKey(), eventID).Err(); err != nil {
+				return removed, err
+			}
+			removed++
+			continue
+		}
+		if !auditRecordExpired(record, now) {
+			continue
+		}
+
+		pipe := s.client.TxPipeline()
+		pipe.Del(ctx, s.recordKey(eventID))
+		pipe.ZRem(ctx, s.indexKey(), eventID)
+		if _, err := pipe.Exec(ctx); err != nil {
+			return removed, err
+		}
+		removed++
+	}
+
+	return removed, nil
 }
 
 func (s *redisWebhookAuditStore) recordKey(eventID string) string {

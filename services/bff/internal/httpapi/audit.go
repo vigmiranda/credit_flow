@@ -9,22 +9,23 @@ import (
 )
 
 type WebhookAuditRecord struct {
-	EventID          string `json:"event_id"`
-	CallbackType     string `json:"callback_type"`
-	CorrelationID    string `json:"correlation_id,omitempty"`
-	ProposalID       string `json:"proposal_id,omitempty"`
-	DocumentID       string `json:"document_id,omitempty"`
-	Provider         string `json:"provider,omitempty"`
-	EventType        string `json:"event_type,omitempty"`
-	ReplayStatus     string `json:"replay_status,omitempty"`
-	ProcessingStatus string `json:"processing_status,omitempty"`
-	ErrorCode        string `json:"error_code,omitempty"`
-	ErrorMessage     string `json:"error_message,omitempty"`
-	ReceivedAt       string `json:"received_at"`
-	ProcessedAt      string `json:"processed_at,omitempty"`
-	ExpiresAt        string `json:"expires_at,omitempty"`
-	ReplayReleasedAt string `json:"replay_released_at,omitempty"`
-	LastReplayAction string `json:"last_replay_action,omitempty"`
+	EventID            string `json:"event_id"`
+	CallbackType       string `json:"callback_type"`
+	CorrelationID      string `json:"correlation_id,omitempty"`
+	ProposalID         string `json:"proposal_id,omitempty"`
+	DocumentID         string `json:"document_id,omitempty"`
+	Provider           string `json:"provider,omitempty"`
+	EventType          string `json:"event_type,omitempty"`
+	ReplayStatus       string `json:"replay_status,omitempty"`
+	ProcessingStatus   string `json:"processing_status,omitempty"`
+	ErrorCode          string `json:"error_code,omitempty"`
+	ErrorMessage       string `json:"error_message,omitempty"`
+	ReceivedAt         string `json:"received_at"`
+	ProcessedAt        string `json:"processed_at,omitempty"`
+	ExpiresAt          string `json:"expires_at,omitempty"`
+	RetentionExpiresAt string `json:"retention_expires_at,omitempty"`
+	ReplayReleasedAt   string `json:"replay_released_at,omitempty"`
+	LastReplayAction   string `json:"last_replay_action,omitempty"`
 }
 
 type WebhookAuditFilter struct {
@@ -39,22 +40,26 @@ type WebhookAuditStore interface {
 	Get(ctx context.Context, eventID string) (WebhookAuditRecord, bool, error)
 	List(ctx context.Context, filter WebhookAuditFilter) ([]WebhookAuditRecord, error)
 	MarkReplayReleased(ctx context.Context, eventID string, releasedAt time.Time) error
+	CleanupExpired(ctx context.Context, now time.Time) (int, error)
 }
 
 type memoryWebhookAuditStore struct {
-	mu      sync.Mutex
-	records map[string]WebhookAuditRecord
+	mu        sync.Mutex
+	records   map[string]WebhookAuditRecord
+	retention time.Duration
 }
 
 func NewMemoryWebhookAuditStore() WebhookAuditStore {
 	return &memoryWebhookAuditStore{
-		records: make(map[string]WebhookAuditRecord),
+		records:   make(map[string]WebhookAuditRecord),
+		retention: 7 * 24 * time.Hour,
 	}
 }
 
 func (s *memoryWebhookAuditStore) Upsert(_ context.Context, record WebhookAuditRecord) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	record = applyAuditRetention(record, s.retention)
 	s.records[strings.TrimSpace(record.EventID)] = record
 	return nil
 }
@@ -104,6 +109,22 @@ func (s *memoryWebhookAuditStore) MarkReplayReleased(_ context.Context, eventID 
 	return nil
 }
 
+func (s *memoryWebhookAuditStore) CleanupExpired(_ context.Context, now time.Time) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	removed := 0
+	for key, record := range s.records {
+		if !auditRecordExpired(record, now) {
+			continue
+		}
+		delete(s.records, key)
+		removed++
+	}
+
+	return removed, nil
+}
+
 func matchesAuditFilter(record WebhookAuditRecord, filter WebhookAuditFilter) bool {
 	if value := strings.TrimSpace(filter.EventID); value != "" && record.EventID != value {
 		return false
@@ -125,4 +146,29 @@ func normalizedAuditLimit(value int) int {
 		return 200
 	}
 	return value
+}
+
+func applyAuditRetention(record WebhookAuditRecord, retention time.Duration) WebhookAuditRecord {
+	if strings.TrimSpace(record.RetentionExpiresAt) != "" {
+		return record
+	}
+	if retention <= 0 {
+		retention = 7 * 24 * time.Hour
+	}
+
+	record.RetentionExpiresAt = time.Now().UTC().Add(retention).Format(time.RFC3339)
+	return record
+}
+
+func auditRecordExpired(record WebhookAuditRecord, now time.Time) bool {
+	if strings.TrimSpace(record.RetentionExpiresAt) == "" {
+		return false
+	}
+
+	expiresAt, err := time.Parse(time.RFC3339, record.RetentionExpiresAt)
+	if err != nil {
+		return false
+	}
+
+	return !expiresAt.After(now.UTC())
 }

@@ -26,7 +26,7 @@ func main() {
 	if err != nil || cfg.RedisURL == "" {
 		auditStore = httpapi.NewMemoryWebhookAuditStore()
 	}
-	apiHandler := metrics.Wrap(httpapi.NewServerWithDependencies(
+	apiHandler := metrics.Wrap(httpapi.NewServerWithPolicyConfig(
 		backend.NewClient(cfg.ProposalServiceURL),
 		backend.NewClient(cfg.CustomerServiceURL),
 		backend.NewClient(cfg.DocumentServiceURL),
@@ -37,6 +37,14 @@ func main() {
 		replayStore,
 		auditStore,
 		metrics,
+		httpapi.WebhookPolicyConfig{
+			StorageMaxAge:           cfg.StorageWebhookMaxAge,
+			CreditMaxAge:            cfg.CreditWebhookMaxAge,
+			FraudMaxAge:             cfg.FraudWebhookMaxAge,
+			AllowedStorageProviders: cfg.StorageProviders,
+			AllowedCreditProviders:  cfg.CreditProviders,
+			AllowedFraudProviders:   cfg.FraudProviders,
+		},
 	))
 
 	mux := http.NewServeMux()

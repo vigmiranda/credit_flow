@@ -32,6 +32,7 @@ export type Proposal = {
   analysis_results?: AnalysisResult[];
   status_history?: StatusHistoryEntry[];
   notifications?: NotificationEntry[];
+  webhook_audit?: WebhookAuditEntry[];
   created_at: string;
   updated_at: string;
 };
@@ -66,6 +67,26 @@ export type NotificationEntry = {
   trigger_status: string;
   sent_at: string;
   created_at: string;
+};
+
+export type WebhookAuditEntry = {
+  event_id: string;
+  callback_type: string;
+  correlation_id?: string;
+  proposal_id?: string;
+  document_id?: string;
+  provider?: string;
+  event_type?: string;
+  replay_status?: string;
+  processing_status?: string;
+  error_code?: string;
+  error_message?: string;
+  received_at: string;
+  processed_at?: string;
+  expires_at?: string;
+  retention_expires_at?: string;
+  replay_released_at?: string;
+  last_replay_action?: string;
 };
 
 type CustomerPayload = {

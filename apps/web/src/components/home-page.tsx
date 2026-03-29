@@ -49,6 +49,12 @@ const analysisLabels: Record<string, string> = {
   fraud: "Fraude",
 };
 
+const webhookLabels: Record<string, string> = {
+  storage: "Webhook de storage",
+  credit: "Callback de credito",
+  fraud: "Callback de fraude",
+};
+
 const timelineLabels: Record<string, string> = {
   created: "Proposta criada",
   customer_data_pending: "Aguardando dados do cliente",
@@ -186,6 +192,21 @@ export default function HomePage({ session }: HomePageProps) {
       kind: "notification" as const,
       title: `Notificacao ${entry.channel}`,
       detail: `${entry.message} (${entry.status})`,
+    })),
+    ...(proposal?.webhook_audit ?? []).map((entry) => ({
+      id: entry.event_id,
+      timestamp: entry.processed_at ?? entry.received_at,
+      kind: "webhook" as const,
+      title: webhookLabels[entry.callback_type] ?? `Webhook ${entry.callback_type}`,
+      detail: [
+        entry.provider ? `Parceiro: ${entry.provider}` : undefined,
+        entry.event_type ? `Evento: ${entry.event_type}` : undefined,
+        entry.processing_status ? `Processamento: ${entry.processing_status}` : undefined,
+        entry.replay_status ? `Replay: ${entry.replay_status}` : undefined,
+        entry.error_message ? `Erro: ${entry.error_message}` : undefined,
+      ]
+        .filter(Boolean)
+        .join(" | "),
     })),
   ].sort((left, right) => new Date(right.timestamp).getTime() - new Date(left.timestamp).getTime());
 
@@ -535,7 +556,7 @@ export default function HomePage({ session }: HomePageProps) {
           <div className="analysis-section">
             <div className="analysis-header">
               <h3>Timeline da proposta</h3>
-              <p>Historico de status e comunicacoes registradas no fluxo.</p>
+              <p>Historico de status, comunicacoes e callbacks operacionais da proposta.</p>
             </div>
             {timelineEvents.length === 0 ? (
               <p className="empty-state">Ainda nao ha eventos registrados para esta proposta.</p>
