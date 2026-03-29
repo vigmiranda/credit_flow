@@ -3,6 +3,7 @@ package observability
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -18,12 +19,14 @@ type Metrics struct {
 	totalDuration atomic.Int64
 	mu            sync.Mutex
 	paths         map[string]int64
+	webhooks      map[string]int64
 }
 
 func NewMetrics(service string) *Metrics {
 	return &Metrics{
-		service: service,
-		paths:   map[string]int64{},
+		service:  service,
+		paths:    map[string]int64{},
+		webhooks: map[string]int64{},
 	}
 }
 
@@ -67,6 +70,10 @@ func (m *Metrics) Handler() http.Handler {
 		for key, value := range m.paths {
 			paths[key] = value
 		}
+		webhooks := make(map[string]int64, len(m.webhooks))
+		for key, value := range m.webhooks {
+			webhooks[key] = value
+		}
 		m.mu.Unlock()
 
 		totalRequests := m.totalRequests.Load()
@@ -83,8 +90,28 @@ func (m *Metrics) Handler() http.Handler {
 			"inflight_requests": m.inflight.Load(),
 			"average_ms":        avgDuration,
 			"paths":             paths,
+			"webhooks":          webhooks,
 		})
 	})
+}
+
+func (m *Metrics) RecordWebhook(callbackType, provider, replayStatus string) {
+	if strings.TrimSpace(callbackType) == "" {
+		callbackType = "unknown"
+	}
+	if strings.TrimSpace(provider) == "" {
+		provider = "unknown"
+	}
+	if strings.TrimSpace(replayStatus) == "" {
+		replayStatus = "unknown"
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.webhooks["type:"+callbackType]++
+	m.webhooks["provider:"+provider]++
+	m.webhooks["replay:"+replayStatus]++
+	m.webhooks["type:"+callbackType+"|provider:"+provider]++
 }
 
 type statusRecorder struct {

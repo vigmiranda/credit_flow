@@ -15,6 +15,8 @@ type Config struct {
 	NotificationServiceURL string
 	WebhookSecret          string
 	WebhookMaxAge          time.Duration
+	RedisURL               string
+	WebhookReplayPrefix    string
 }
 
 func Load() Config {
@@ -27,6 +29,8 @@ func Load() Config {
 		NotificationServiceURL: getEnv("NOTIFICATION_SERVICE_URL", "http://localhost:8087"),
 		WebhookSecret:          getEnv("BFF_WEBHOOK_SECRET", ""),
 		WebhookMaxAge:          time.Duration(getEnvInt("BFF_WEBHOOK_MAX_AGE_SECONDS", 300)) * time.Second,
+		RedisURL:               getEnv("BFF_REDIS_URL", getEnv("REDIS_URL", "")),
+		WebhookReplayPrefix:    getEnv("BFF_WEBHOOK_REPLAY_PREFIX", "bff:webhook:events"),
 	}
 }
 

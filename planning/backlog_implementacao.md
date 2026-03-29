@@ -333,16 +333,24 @@ Objetivo: garantir repetibilidade, confianca e evolucao continua.
 
 ### Ciclo atual
 
-- Identificador: ciclo-15
+- Identificador: ciclo-16
 - Status: aberto
-- Objetivo: endurecer operacao multi-instancia e observabilidade dos callbacks externos
+- Objetivo: endurecer operacao distribuida e rastreabilidade fim a fim dos parceiros
 - Itens priorizados:
   - preparar dashboards e operacao de fila para cenarios de erro mais agressivos
-  - avaliar rate limit e politicas de replay para callbacks
-  - consolidar observabilidade de callbacks externos por parceiro
-  - preparar persistencia compartilhada para deduplicacao de eventos entre replicas
+  - avaliar rate limit e politicas de replay por parceiro e por rota
+  - adicionar trilha de auditoria persistida para callbacks externos recebidos
+  - evoluir deduplicacao para suportar replay manual seguro e expiracao observavel
 - Observacao:
-  - ciclo-14 fechou callbacks externos de credito/fraude, pausa opcional do workflow e anti-replay no BFF
+  - ciclo-15 fechou deduplicacao compartilhada em Redis e metricas do BFF por callback/parceiro
+
+## Entregas materializadas no ciclo-15
+
+- `BFF` com deduplicacao compartilhada de webhooks via Redis quando `BFF_REDIS_URL` estiver configurado;
+- fallback em memoria preservado para testes e execucao simplificada;
+- `/metrics` do `BFF` ampliado com contadores por tipo de callback, parceiro e replay status;
+- stack Docker e variaveis de ambiente atualizadas para a nova persistencia de replay;
+- backlog reaberto para `ciclo-16` com foco em auditoria e operacao distribuida.
 
 ## Entregas materializadas no ciclo-14
 
@@ -481,3 +489,4 @@ Objetivo: garantir repetibilidade, confianca e evolucao continua.
 | ciclo-12 | concluido | Validacao criptografica de id_token, DLQ e metricas da fila no workflow e webhook inicial de storage no BFF |
 | ciclo-13 | concluido | Webhook autenticado no BFF, inspecao e reprocessamento de DLQ e issuer OIDC mockado na stack local |
 | ciclo-14 | concluido | Callbacks externos de credito e fraude, pausa opcional do workflow e anti-replay no BFF |
+| ciclo-15 | concluido | Deduplicacao compartilhada em Redis no BFF e metricas de callbacks por parceiro |

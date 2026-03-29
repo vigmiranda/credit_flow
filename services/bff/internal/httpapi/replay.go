@@ -1,26 +1,32 @@
 package httpapi
 
 import (
+	"context"
 	"strings"
 	"sync"
 	"time"
 )
 
-type webhookReplayProtector struct {
+type WebhookReplayStore interface {
+	Mark(ctx context.Context, eventID string, expiresAt time.Time) (bool, error)
+	Release(ctx context.Context, eventID string) error
+}
+
+type memoryWebhookReplayStore struct {
 	mu     sync.Mutex
 	events map[string]time.Time
 }
 
-func newWebhookReplayProtector() *webhookReplayProtector {
-	return &webhookReplayProtector{
+func NewMemoryWebhookReplayStore() WebhookReplayStore {
+	return &memoryWebhookReplayStore{
 		events: make(map[string]time.Time),
 	}
 }
 
-func (p *webhookReplayProtector) Mark(eventID string, expiresAt time.Time) bool {
+func (p *memoryWebhookReplayStore) Mark(_ context.Context, eventID string, expiresAt time.Time) (bool, error) {
 	key := strings.TrimSpace(eventID)
 	if key == "" {
-		return false
+		return false, nil
 	}
 
 	p.mu.Lock()
@@ -34,20 +40,21 @@ func (p *webhookReplayProtector) Mark(eventID string, expiresAt time.Time) bool 
 	}
 
 	if storedExpiry, exists := p.events[key]; exists && now.Before(storedExpiry) {
-		return true
+		return true, nil
 	}
 
 	p.events[key] = expiresAt
-	return false
+	return false, nil
 }
 
-func (p *webhookReplayProtector) Release(eventID string) {
+func (p *memoryWebhookReplayStore) Release(_ context.Context, eventID string) error {
 	key := strings.TrimSpace(eventID)
 	if key == "" {
-		return
+		return nil
 	}
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	delete(p.events, key)
+	return nil
 }

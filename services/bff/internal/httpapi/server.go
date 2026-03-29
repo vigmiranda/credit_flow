@@ -55,7 +55,12 @@ type server struct {
 	notifications notificationGateway
 	webhookSecret string
 	webhookMaxAge time.Duration
-	replay        *webhookReplayProtector
+	replay        WebhookReplayStore
+	metrics       webhookMetricsRecorder
+}
+
+type webhookMetricsRecorder interface {
+	RecordWebhook(callbackType, provider, replayStatus string)
 }
 
 type healthResponse struct {
@@ -141,6 +146,24 @@ type analysisWebhookRequest struct {
 }
 
 func NewServer(proposals proposalGateway, customers customerGateway, documents documentGateway, workflow workflowGateway, notifications notificationGateway, webhookSecret string, webhookMaxAge time.Duration) http.Handler {
+	return NewServerWithDependencies(
+		proposals,
+		customers,
+		documents,
+		workflow,
+		notifications,
+		webhookSecret,
+		webhookMaxAge,
+		NewMemoryWebhookReplayStore(),
+		nil,
+	)
+}
+
+func NewServerWithDependencies(proposals proposalGateway, customers customerGateway, documents documentGateway, workflow workflowGateway, notifications notificationGateway, webhookSecret string, webhookMaxAge time.Duration, replayStore WebhookReplayStore, metrics webhookMetricsRecorder) http.Handler {
+	if replayStore == nil {
+		replayStore = NewMemoryWebhookReplayStore()
+	}
+
 	return &server{
 		proposals:     proposals,
 		customers:     customers,
@@ -149,7 +172,8 @@ func NewServer(proposals proposalGateway, customers customerGateway, documents d
 		notifications: notifications,
 		webhookSecret: webhookSecret,
 		webhookMaxAge: webhookMaxAge,
-		replay:        newWebhookReplayProtector(),
+		replay:        replayStore,
+		metrics:       metrics,
 	}
 }
 
@@ -453,6 +477,7 @@ func (s *server) handleStorageDocumentUploaded(w http.ResponseWriter, r *http.Re
 		return
 	}
 	if replayStatus == "duplicate_ignored" {
+		s.recordWebhookMetric("storage", "", replayStatus)
 		writeJSON(w, http.StatusAccepted, map[string]any{
 			"status":        "accepted",
 			"replay_status": replayStatus,
@@ -492,6 +517,7 @@ func (s *server) handleStorageDocumentUploaded(w http.ResponseWriter, r *http.Re
 	var proposal backend.Proposal
 	s.completeDocumentFlow(r.Context(), payload.ProposalID, correlationID, &proposal)
 	processed = true
+	s.recordWebhookMetric("storage", payload.Provider, replayStatus)
 
 	writeJSON(w, http.StatusAccepted, map[string]any{
 		"status":        "accepted",
@@ -516,6 +542,7 @@ func (s *server) handleAnalysisWebhook(w http.ResponseWriter, r *http.Request, c
 		return
 	}
 	if replayStatus == "duplicate_ignored" {
+		s.recordWebhookMetric(analysisType, "", replayStatus)
 		writeJSON(w, http.StatusAccepted, map[string]any{
 			"status":        "accepted",
 			"analysis_type": analysisType,
@@ -559,6 +586,7 @@ func (s *server) handleAnalysisWebhook(w http.ResponseWriter, r *http.Request, c
 		return
 	}
 	processed = true
+	s.recordWebhookMetric(analysisType, payload.Provider, replayStatus)
 
 	workflowResponse["status"] = "accepted"
 	workflowResponse["replay_status"] = replayStatus
@@ -700,13 +728,17 @@ func (s *server) validateWebhookRequest(r *http.Request, body []byte) (string, f
 	if s.webhookMaxAge <= 0 {
 		expiresAt = time.Now().UTC().Add(5 * time.Minute)
 	}
-	if s.replay.Mark(eventID, expiresAt) {
+	duplicate, err := s.replay.Mark(r.Context(), eventID, expiresAt)
+	if err != nil {
+		return "", nil, errInvalidWebhookReplayStore
+	}
+	if duplicate {
 		return "duplicate_ignored", func(bool) {}, nil
 	}
 
 	return "processed", func(success bool) {
 		if !success {
-			s.replay.Release(eventID)
+			_ = s.replay.Release(r.Context(), eventID)
 		}
 	}, nil
 }
@@ -728,10 +760,11 @@ func parseWebhookTimestamp(value string) (time.Time, error) {
 }
 
 var (
-	errInvalidWebhookSignature = errorString("invalid_signature")
-	errInvalidWebhookTimestamp = errorString("invalid_timestamp")
-	errStaleWebhookTimestamp   = errorString("stale_timestamp")
-	errMissingWebhookEventID   = errorString("missing_event_id")
+	errInvalidWebhookSignature   = errorString("invalid_signature")
+	errInvalidWebhookTimestamp   = errorString("invalid_timestamp")
+	errStaleWebhookTimestamp     = errorString("stale_timestamp")
+	errMissingWebhookEventID     = errorString("missing_event_id")
+	errInvalidWebhookReplayStore = errorString("replay_store_error")
 )
 
 type errorString string
@@ -750,7 +783,17 @@ func (s *server) writeWebhookValidationError(w http.ResponseWriter, correlationI
 		writeError(w, http.StatusBadRequest, correlationID, "invalid_request", "header X-Webhook-Timestamp invalido", nil)
 	case errStaleWebhookTimestamp:
 		writeError(w, http.StatusUnauthorized, correlationID, "stale_webhook", "timestamp do webhook fora da janela aceita", nil)
+	case errInvalidWebhookReplayStore:
+		writeError(w, http.StatusBadGateway, correlationID, "upstream_error", "falha ao persistir deduplicacao do webhook", nil)
 	default:
 		writeError(w, http.StatusBadRequest, correlationID, "invalid_request", "webhook invalido", nil)
 	}
+}
+
+func (s *server) recordWebhookMetric(callbackType, provider, replayStatus string) {
+	if s.metrics == nil {
+		return
+	}
+
+	s.metrics.RecordWebhook(callbackType, provider, replayStatus)
 }

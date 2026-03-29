@@ -18,7 +18,11 @@ import (
 func main() {
 	cfg := config.Load()
 	metrics := observability.NewMetrics("bff")
-	apiHandler := metrics.Wrap(httpapi.NewServer(
+	replayStore, err := httpapi.NewRedisWebhookReplayStore(cfg.RedisURL, cfg.WebhookReplayPrefix)
+	if err != nil || cfg.RedisURL == "" {
+		replayStore = httpapi.NewMemoryWebhookReplayStore()
+	}
+	apiHandler := metrics.Wrap(httpapi.NewServerWithDependencies(
 		backend.NewClient(cfg.ProposalServiceURL),
 		backend.NewClient(cfg.CustomerServiceURL),
 		backend.NewClient(cfg.DocumentServiceURL),
@@ -26,6 +30,8 @@ func main() {
 		backend.NewClient(cfg.NotificationServiceURL),
 		cfg.WebhookSecret,
 		cfg.WebhookMaxAge,
+		replayStore,
+		metrics,
 	))
 
 	mux := http.NewServeMux()

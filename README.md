@@ -111,6 +111,8 @@ Pre-requisito:
 - `/metrics` do `workflow` agora inclui enqueue, process, retry, DLQ e profundidade de fila
 - o `workflow` expoe `GET /internal/dlq` e `POST /internal/dlq/reprocess` para operacao local
 - o `BFF` aceita webhooks autenticados de `storage`, `credit` e `fraud`, com `event-id` e janela anti-replay
+- quando `BFF_REDIS_URL` estiver configurado, a deduplicacao dos webhooks passa a ser compartilhada entre replicas
+- `/metrics` do `BFF` agora inclui contadores de callbacks por tipo, parceiro e replay status
 
 ## Seguranca minima atual
 

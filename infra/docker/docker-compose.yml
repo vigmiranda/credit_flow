@@ -187,6 +187,8 @@ services:
       NOTIFICATION_SERVICE_URL: http://notification:8087
       BFF_WEBHOOK_SECRET: credit-flow-local-webhook-secret
       BFF_WEBHOOK_MAX_AGE_SECONDS: "300"
+      BFF_REDIS_URL: redis://redis:6379/2
+      BFF_WEBHOOK_REPLAY_PREFIX: bff:webhook:events
     depends_on:
       proposal:
         condition: service_started
@@ -198,6 +200,8 @@ services:
         condition: service_started
       notification:
         condition: service_started
+      redis:
+        condition: service_healthy
     ports:
       - "18080:8080"
 
