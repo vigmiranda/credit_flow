@@ -1,6 +1,6 @@
 # Credit Flow
 
-Repositorio base para a plataforma de captura e analise de propostas de cartoes.
+Repositório base para a plataforma de captura e análise de propostas de cartões.
 
 ## Estrutura inicial
 
@@ -27,44 +27,44 @@ Repositorio base para a plataforma de captura e analise de propostas de cartoes.
 
 ## Objetivo do primeiro corte
 
-Entregar um slice vertical demonstravel do fluxo de proposta:
+Entregar um slice vertical demonstrável do fluxo de proposta:
 
 - abertura de proposta;
 - cadastro do cliente;
 - upload de documentos;
-- analises assincronas simuladas;
+- analises assíncronas simuladas;
 - consulta de status;
-- notificacao basica.
+- notificação básica.
 
 ## Documentos principais
 
 - `planning/backlog_implementacao.md`: backlog vivo do projeto
-- `docs/padroes_desenvolvimento.md`: convencoes de engenharia
+- `docs/padroes_desenvolvimento.md`: convenções de engenharia
 - `docs/workflow_inicial.md`: fluxo do MVP para analises simuladas
 - `docs/ambiente_local.md`: stack local e componentes auxiliares
 - `docs/seguranca_operacional.md`: mascaramento, secrets via arquivo e criptografia
-- `docs/alarmes_dashboards.md`: monitoracao minima para operacao
+- `docs/alarmes_dashboards.md`: monitoracão minima para operação
 - `docs/estrategia_deploy.md`: fluxo recomendado de entrega por imagens
-- `use_case/plano_implementacao_cartoes.md`: plano macro original
+- `use_case/plano_implementacao_cartoes.md`: plano macro-original
 
-## Servicos disponiveis no momento
+## Serviços disponíveis no momento
 
 - `services/proposal`: cria, consulta e atualiza status da proposta
 - `services/customer`: cadastra e consulta cliente por proposta
 - `services/document`: registra documentos, grava arquivos no MinIO e lista documentos
-- `services/workflow`: enfileira e processa as analises simuladas do MVP com worker e retry
-- `services/credit-analysis`: simulador de analise de credito
-- `services/fraud-analysis`: simulador de analise de fraude
-- `services/notification`: registra o historico de notificacoes e envia e-mail por SMTP local
-- `services/mock-oidc`: issuer OIDC mockado para login real na stack local
-- `services/bff`: agrega os servicos core para o front
+- `services/workflow`: enfileira e processa as análises simuladas do MVP com worker e retry
+- `services/credit-analysis`: simulador de análise de crédito
+- `services/fraud-analysis`: simulador de análise de fraude
+- `services/notification`: registra o histórico de notificações e envia e-mail por SMTP local
+- `services/mock-oidc`: issuer OIDC mockado para ‘login’ real na stack local
+- `services/bff`: agrega os serviços core para o front
 - `apps/web`: jornada inicial em Next.js consumindo o BFF
 
 ## Subida local
 
-1. Subir toda a stack com um unico comando:
+1. Subir toda a stack com um único comando:
    `powershell -ExecutionPolicy Bypass -File .\scripts\up_local_stack.ps1`
-2. Abrir a aplicacao:
+2. Abrir a aplicação:
    `http://localhost:3000`
 3. Derrubar a stack quando terminar:
    `powershell -ExecutionPolicy Bypass -File .\scripts\down_local_stack.ps1`
@@ -72,7 +72,7 @@ Entregar um slice vertical demonstravel do fluxo de proposta:
 Se preferir rodar sem os scripts:
 `docker compose -f infra/docker/docker-compose.yml up -d --build`
 
-Pre-requisito:
+Pré-requisito:
 `Docker Desktop` precisa estar ativo no host.
 
 ## Ambiente local auxiliar
@@ -86,16 +86,16 @@ Pre-requisito:
 - `bff` em `http://localhost:18080`
 - `workflow` operacional em `http://localhost:18084`
 - `web` em `http://localhost:3000`
-- servicos internos acessiveis apenas pela rede Docker da stack
+- serviços internos acessíveis apenas pela rede Docker da stack
 
-## Autenticacao inicial
+## Autenticação inicial
 
-- `apps/web` agora protege `/` por cookie de sessao e redireciona para `/login`
-- `AUTH_MODE=mock` habilita login operacional local
-- `AUTH_MODE=oidc` habilita inicio de login via issuer configurado, troca de token e validacao criptografica do `id_token` por discovery/JWKS
-- a stack Docker sobe por padrao com `AUTH_MODE=oidc` ligado ao `mock-oidc`
+- `apps/web` agora protege `/` por ‘cookie’ de sessão e redireciona para `/login`
+- `AUTH_MODE=mock` habilita ‘login’ operacional local
+- `AUTH_MODE=oidc` habilita inicio de ‘login’ via issuer configurado, troca de ‘token’ e validação criptográfica do `id_token` por discovery/JWKS
+- a stack Docker sobe por padrão com `AUTH_MODE=oidc` ligado ao `mock-oidc`
 
-## Validacao rapida
+## Validação rápida
 
 - local: `powershell -ExecutionPolicy Bypass -File .\scripts\verify.ps1`
 - smoke do MVP: `powershell -ExecutionPolicy Bypass -File .\scripts\smoke_mvp.ps1`
@@ -106,24 +106,24 @@ Pre-requisito:
 ## Observabilidade inicial
 
 - `GET /metrics` disponivel em `bff`, `proposal`, `workflow` e `notification`
-- logs estruturados em JSON com `correlation_id`, `path`, `status_code` e `duration_ms`
-- `workflow` usa Redis como fila quando `WORKFLOW_REDIS_URL` estiver configurado e cai para fila em memoria no fallback local
+- ‘logs’ estruturados em JSON com `correlation_id`, `path`, `status_code` e `duration_ms`
+- `workflow` usa Redis como fila quando `WORKFLOW_REDIS_URL` estiver configurado e cai para fila em memória no fallback local
 - `/metrics` do `workflow` agora inclui enqueue, process, retry, DLQ e profundidade de fila
-- o `workflow` expoe `GET /internal/dlq` e `POST /internal/dlq/reprocess` para operacao local
+- o `workflow` expõe `GET /internal/dlq` e `POST /internal/dlq/reprocess` para operação local
 - o `BFF` aceita webhooks autenticados de `storage`, `credit` e `fraud`, com `event-id` e janela anti-replay
-- quando `BFF_REDIS_URL` estiver configurado, a deduplicacao dos webhooks passa a ser compartilhada entre replicas
+- quando `BFF_REDIS_URL` estiver configurado, a deduplicacao dos webhooks passa a ser compartilhada entre réplicas
 - `/metrics` do `BFF` agora inclui contadores de callbacks por tipo, parceiro e status operacional
 - o `BFF` persiste auditoria dos callbacks, correlaciona essa trilha com `GET /api/v1/proposals/{proposalId}` e expoe `GET /internal/webhooks/audit`, `POST /internal/webhooks/audit/{eventId}/replay-release` e `POST /internal/webhooks/audit/cleanup`
-- o `BFF` aplica rate limit por rota e parceiro, com configuracao por `BFF_*_RATE_LIMIT` e `BFF_*_RATE_WINDOW_SECONDS`
+- o `BFF` aplica rate limit por rota e parceiro, com configuração por `BFF_*_RATE_LIMIT` e `BFF_*_RATE_WINDOW_SECONDS`
 - o `BFF` expoe `GET /internal/operations/overview` para resumir sinais de callback e DLQ do workflow
 
 ## Seguranca minima atual
 
 - `GET /api/v1/proposals/{proposalId}` retorna `cpf`, `email`, `phone` e `recipient` mascarados
-- `notification service` persiste destinatario mascarado e copia criptografada
-- servicos stateful aceitam `DATABASE_URL` e equivalentes via variaveis `*_FILE`
+- `notification service` persiste destinatário mascarado e cópia criptografada
+- serviços stateful aceitam `DATABASE_URL` e equivalentes via variáveis `*_FILE`
 
-## Enderecos padrao
+## Endereços padrão
 
 - Front web: `http://localhost:3000`
 - BFF: `http://localhost:18080`
@@ -143,4 +143,4 @@ Pre-requisito:
 - Encerramento formal do MVP: `docs/encerramento_mvp.md`
 - Guia de teste manual E2E: `docs/teste_manual_ponta_a_ponta.md`
 - Diagrama da arquitetura do MVP: `docs/diagrama_arquitetura_mvp.md`
-- Referencia de arquitetura AWS: `docs/arquitetura_aws_referencia.md`
+- Referência de arquitetura AWS: `docs/arquitetura_aws_referencia.md`
