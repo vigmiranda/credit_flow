@@ -45,7 +45,7 @@ Entregar um slice vertical demonstravel do fluxo de proposta:
 - `docs/seguranca_operacional.md`: mascaramento, secrets via arquivo e criptografia
 - `docs/alarmes_dashboards.md`: monitoracao minima para operacao
 - `docs/estrategia_deploy.md`: fluxo recomendado de entrega por imagens
-- `use_case/plano_implementacao_itau_cartoes.md`: plano macro original
+- `use_case/plano_implementacao_cartoes.md`: plano macro original
 
 ## Servicos disponiveis no momento
 
